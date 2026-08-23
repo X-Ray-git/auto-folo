@@ -1,5 +1,5 @@
 /* 由 scripts/docs-index.js 生成，随内容提交；阅读端零生成。 */
-window.WIKI_SEARCH_MANIFEST = "165bccdc8d723238";
+window.WIKI_SEARCH_MANIFEST = "0f80abfaecca2ecd";
 window.WIKI_SEARCH_INDEX = [
  {
   "path": "architecture/networking.html",
@@ -4157,7 +4157,7 @@ window.WIKI_SEARCH_INDEX = [
     "text": "相关页面"
    }
   ],
-  "text": "开发流程 面向后续 agent 与开发者的日常开发入口。当前工具链对齐 Flutter 3.47.0 （项目最低约束 Flutter >=3.47.0 、Dart ^3.13.0 ）。 快速开始 flutter pub get flutter run -d macos # macOS flutter run -d <device-id> # Android 首次配置：应用内设置页填写 Folo Session Token （Folo Web 应用的 Cookie）与 DeepSeek API Key （翻译、摘要和垃圾拦截功能需要）。 常规检查 dart analyze lib test flutter analyze lib test flutter test flutter build macos --debug 迭代时可以使用更小范围的检查： dart analyze lib/pages/article/article_page.dart flutter test test/article_model_test.dart test/feed_model_test.dart test/html_entity_utils_test.dart 不要依赖完整 dart analyze dart analyze # 不要使用 原因：仓库的 reference/ 下有复制来的参考工程；完整 dart analyze 会把它们也扫进去，并产生无关错误。CI 使用 flutter analyze --no-fatal-infos lib test 。 macOS 本地 UI 验证 flutter run -d macos 或者： flutter build macos --debug open \"build/macos/Build/Products/Debug/Fourier.app\" 不要把本地 macOS release 构建作为主要 UI 验证目标。本地环境可能把 release 产物视为 ad-hoc 签名或未知证书链，从而造成启动/framework 加载问题；这不一定和当前代码有关。 如果 macOS Debug 出现“构建成功但等不到 debug connection”： flutter clean flutter pub get flutter run -d macos --no-pub 当前 Debug 配置依赖 ENABLE_DEBUG_DYLIB = NO 避免 Fourier.debug.dylib 被 macOS 系统策略拒载。验证时应看到 A Dart VM Service on macOS is available at: 。 动画诊断 复现 M/K 、审核横滑或主时间线双击偶发瞬移时，以 Debug 埋点运行： flutter run -d macos --no-pub \\ --dart-define=FOURIER_ANIMATION_PROBE=true \\ 2>&1 | tee /tmp/fourier-animation.log 按页面过滤 ReviewAnimProbe 、 TimelineAnimationProbe 、 TimelineTapProbe 、 TimelineListResetProbe 、 TimelineReadStateProbe 。埋点只输出文章 id 末 8 位、动作来源、列表数量、动画阶段和慢帧耗时，不输出标题、正文、凭据或完整文章 id。不要为了普通运行长期打开该开关。 文档维护 更新当前工作对应的专题页；长期有效的取舍写入 history/decisions.md 。 用 history/historical-map.md 定位旧上下文；历史归档不追加当前事实。 编辑 wiki 页面的方法见 站点指南 。 除非确实要保留原始时间线记录，否则不要继续向完整归档追加新工作。 相关页面 测试 ：测试命令与回归覆盖要求。 故障排查 ：常见问题速查。 Git worktree ：并行 agent 工作区规则。 发布与构建 ：版本号与发布流程。 验证记录 ：开放验证项与已确认结论。"
+  "text": "开发流程 面向后续 agent 与开发者的日常开发入口。当前工具链对齐 Flutter 3.47.0 （项目最低约束 Flutter >=3.47.0 、Dart ^3.13.0 ）。 快速开始 flutter pub get flutter run -d macos # macOS flutter run -d <device-id> # Android 首次配置：在应用设置页通过系统浏览器登录 Folo；手动填写长期 Session Token 或导入旧配置仅作为兼容入口。需要使用翻译、摘要、垃圾拦截或相关文章关系时，再填写 DeepSeek API Key 。 本地构建发布产物： flutter build macos --release flutter build apk --release 正式发布仍必须使用带说明的 annotated tag 和 scripts/release.sh ，由 GitHub Actions 构建 Android APK、macOS arm64 ZIP 与 Sparkle appcast；不要用本地构建代替发布流水线。 常规检查 dart analyze lib test flutter analyze lib test flutter test flutter build macos --debug 迭代时可以使用更小范围的检查： dart analyze lib/pages/article/article_page.dart flutter test test/article_model_test.dart test/feed_model_test.dart test/html_entity_utils_test.dart 不要依赖完整 dart analyze dart analyze # 不要使用 原因：仓库的 reference/ 下有复制来的参考工程；完整 dart analyze 会把它们也扫进去，并产生无关错误。CI 使用 flutter analyze --no-fatal-infos lib test 。 macOS 本地 UI 验证 flutter run -d macos 或者： flutter build macos --debug open \"build/macos/Build/Products/Debug/Fourier.app\" 不要把本地 macOS release 构建作为主要 UI 验证目标。本地环境可能把 release 产物视为 ad-hoc 签名或未知证书链，从而造成启动/framework 加载问题；这不一定和当前代码有关。 如果 macOS Debug 出现“构建成功但等不到 debug connection”： flutter clean flutter pub get flutter run -d macos --no-pub 当前 Debug 配置依赖 ENABLE_DEBUG_DYLIB = NO 避免 Fourier.debug.dylib 被 macOS 系统策略拒载。验证时应看到 A Dart VM Service on macOS is available at: 。 动画诊断 复现 M/K 、审核横滑或主时间线双击偶发瞬移时，以 Debug 埋点运行： flutter run -d macos --no-pub \\ --dart-define=FOURIER_ANIMATION_PROBE=true \\ 2>&1 | tee /tmp/fourier-animation.log 按页面过滤 ReviewAnimProbe 、 TimelineAnimationProbe 、 TimelineTapProbe 、 TimelineListResetProbe 、 TimelineReadStateProbe 。埋点只输出文章 id 末 8 位、动作来源、列表数量、动画阶段和慢帧耗时，不输出标题、正文、凭据或完整文章 id。不要为了普通运行长期打开该开关。 文档维护 更新当前工作对应的专题页；长期有效的取舍写入 history/decisions.md 。 用 history/historical-map.md 定位旧上下文；历史归档不追加当前事实。 编辑 wiki 页面的方法见 站点指南 。 除非确实要保留原始时间线记录，否则不要继续向完整归档追加新工作。 相关页面 测试 ：测试命令与回归覆盖要求。 故障排查 ：常见问题速查。 Git worktree ：并行 agent 工作区规则。 发布与构建 ：版本号与发布流程。 验证记录 ：开放验证项与已确认结论。"
  },
  {
   "path": "operations/git-worktrees.html",
@@ -4213,6 +4213,10 @@ window.WIKI_SEARCH_INDEX = [
     "text": "主要功能"
    },
    {
+    "id": "平台边界",
+    "text": "平台边界"
+   },
+   {
     "id": "优先级",
     "text": "优先级"
    },
@@ -4225,7 +4229,7 @@ window.WIKI_SEARCH_INDEX = [
     "text": "相关页面"
    }
   ],
-  "text": "产品定位 Fourier 是一个个人使用的高密度 RSS/Folo 聚合阅读客户端，基于 Flutter，支持 Android 与 macOS。它是 X-Ray 个人使用的软件，围绕 Folo 使用场景构建，但 不是 Folo、RSSNext 或其运营方的官方客户端，也不代表官方发布版本。 核心价值 同步 Folo 文章，按源筛选，逐块渲染长文，并基于 DeepSeek 完成可配置的翻译、摘要与垃圾拦截判定。 聚焦高密度信息流阅读：时间线、未读/全部/已读模式、长度排序、macOS 分栏阅读。 所有 AI 能力（翻译、摘要、垃圾拦截）都是辅助工具，最终决定始终由用户做出。 主要功能 时间线 — 未读/全部筛选、最近阅读、长度排序与 macOS 分栏阅读。 订阅源 — Articles / Social Media / Inbox 分组，分类与订阅源筛选、搜索、静默订阅源。 文章阅读 — HTML 拆块渲染、目录跳转、Markdown 复制、图片画廊与视频播放（普通视频、YouTube、Bilibili）。 垃圾拦截 — DeepSeek 判定后进入独立审核页，可保留或移除，不直接替用户做最终决定。 已读同步 — 本地 + Folo 云端双向同步。 AI 翻译 / 摘要 — 独立 LLM 配置与后台队列；自动任务只服务仍未读的文章。 配置迁移 — 设置可导出为 JSON 并通过剪贴板导入。 桌面体验 — macOS 原生分栏、克制的 Liquid Glass、右键菜单、快捷键与同步状态反馈。 优先级 快速、可重复的阅读工作流。 低摩擦的 macOS 分栏阅读体验。 稳定的 Android 行为。 同步、翻译、摘要、过滤任务要有清晰反馈。 避免 UI 看起来像 Folo 官方品牌，或暗示官方所有权。 身份与命名空间 产品名： Fourier ；Dart package 名： fourier 。 Android applicationId / macOS bundle id / MethodChannel 命名空间统一为 io.github.xraygit.fourier 。 历史 com.folo.* 与 com.autofolo 引用已经废弃，不得重新引入。 相关页面 设计原则 术语 隐私 当前状态"
+  "text": "产品定位 Fourier 是一个个人使用的高密度 RSS/Folo 聚合阅读客户端，基于 Flutter，支持 Android 与 macOS。它是 X-Ray 个人使用的软件，围绕 Folo 使用场景构建，但 不是 Folo、RSSNext 或其运营方的官方客户端，也不代表官方发布版本。 核心价值 通过浏览器登录 Folo，同步文章与已读状态，按分类和订阅源组织高密度信息流。 聚焦可重复的阅读工作流：未读/全部时间线、最近阅读、长度排序、长文分块渲染与 macOS 分栏阅读。 翻译、摘要、质量过滤和文章关系建立由独立后台队列处理；AI 结果用于辅助阅读，最终决定始终由用户做出。 主要功能 账号与同步 — Android 和 macOS 均可通过系统浏览器登录 Folo，也保留长期 Session Token 和旧配置导入作为兼容入口。阅读操作写回 Folo，云端已读状态按可配置时间窗口同步。 时间线 — 未读/全部筛选、最近阅读、文章搜索、长度排序与 macOS 分栏阅读。 订阅源 — Articles / Social Media / Inbox 分组，分类与订阅源筛选和静默订阅源；Android 订阅页提供搜索，macOS 还可添加 RSS、编辑订阅和取消订阅，取消订阅可通过撤销恢复。 文章阅读 — HTML 拆块渲染、目录跳转、Markdown 复制、图片画廊与视频播放。YouTube 和 Bilibili 优先使用定制播放器，失败时保留官方嵌入回退。 AI 翻译 / 摘要 — 使用彼此独立的 LLM 配置、并发参数和滚动补位后台队列。未读状态控制自动流水线入口，已经开始的任务可继续完成。 垃圾拦截 — DeepSeek 质量过滤只处理未读文章，结果进入独立审核页；用户可保留、移除或撤销操作，模型不直接替用户做最终决定。 相关文章关系 — 默认关闭的可选增益功能。开启后基于新生成的摘要建立“同一事件”或“基本等价”关系，用于文章内展示和后续分析，当前不会自动移动文章。 静默订阅源 — macOS 汇总视图支持批量选择、复制 Markdown、保存文件，以及导出后批量标为已读。 配置迁移 — 设置可导出为 JSON 并通过剪贴板导入；导出内容包含登录凭据、API Key、Prompt 与订阅源偏好，必须按敏感配置保管。 平台体验 — Android 提供移动端导航、侧滑审核与触觉反馈；macOS 提供原生分栏、克制的 Liquid Glass、右键菜单、快捷键和连续撤销/重做。 应用更新 — 两个平台均只在用户主动操作时检查 GitHub Releases；Android 下载并调用系统安装界面，macOS 使用 Sparkle 更新链路。 平台边界 发布构建提供 Android APK 与 macOS arm64 安装包，不上传应用商店。 macOS 订阅管理和静默订阅源批量导出尚未迁移到 Android。 相关文章关系依赖 DeepSeek，默认关闭；关闭期间新生成的摘要不会积压等待以后补建关系。 自动更新检查不会在后台主动发起，只有用户在设置页点击时才访问 GitHub。 优先级 快速、可重复的阅读工作流。 低摩擦的 macOS 分栏阅读体验。 稳定的 Android 行为。 同步、翻译、摘要、过滤任务要有清晰反馈。 避免 UI 看起来像 Folo 官方品牌，或暗示官方所有权。 身份与命名空间 产品名： Fourier ；Dart package 名： fourier 。 Android applicationId / macOS bundle id / MethodChannel 命名空间统一为 io.github.xraygit.fourier 。 历史 com.folo.* 与 com.autofolo 引用已经废弃，不得重新引入。 相关页面 设计原则 术语 隐私 当前状态"
  },
  {
   "path": "product/principles.html",

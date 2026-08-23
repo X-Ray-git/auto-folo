@@ -60,7 +60,16 @@ flutter run -d macos       # macOS
 flutter run -d <device-id> # Android
 ```
 
-首次配置：应用内设置页填写 **Folo Session Token**（Folo Web 应用的 Cookie）与 **DeepSeek API Key**（翻译、摘要和垃圾拦截功能需要）。
+首次配置：在应用设置页通过系统浏览器登录 Folo；手动填写长期 **Session Token** 或导入旧配置仅作为兼容入口。需要使用翻译、摘要、垃圾拦截或相关文章关系时，再填写 **DeepSeek API Key**。
+
+本地构建发布产物：
+
+```bash
+flutter build macos --release
+flutter build apk --release
+```
+
+正式发布仍必须使用带说明的 annotated tag 和 `scripts/release.sh`，由 GitHub Actions 构建 Android APK、macOS arm64 ZIP 与 Sparkle appcast；不要用本地构建代替发布流水线。
 
 ## 常规检查
 
