@@ -20,12 +20,14 @@ import '../../router/app_pages.dart';
 import '../../common/constants/constants.dart';
 import '../../common/widgets/feedback_toast.dart';
 import '../../common/widgets/app_glass.dart';
+import '../../common/widgets/diagnostic_activity_marker.dart';
 import '../../common/widgets/macos_window_drag_area.dart';
 import '../../common/widgets/mobile_blur_app_bar.dart';
 import '../../common/widgets/mobile_edge_fade.dart';
 import '../../common/widgets/pill_tag.dart';
 import '../../common/liquid_glass/liquid_glass.dart' as glass;
 import '../../services/article_image_service.dart';
+import '../../services/animation_activity_monitor.dart';
 import '../../services/article_image_cache_service.dart';
 import '../../services/article_markdown_export_service.dart';
 import '../../services/article_relation_service.dart';
@@ -1820,10 +1822,14 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                               SizedBox(
                                 width: 24,
                                 height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  color: colorScheme.primary.withValues(
-                                    alpha: 0.6,
+                                child: DiagnosticActivityMarker(
+                                  kind:
+                                      AnimationActivityKind.articleBodyLoading,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: colorScheme.primary.withValues(
+                                      alpha: 0.6,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1859,10 +1865,14 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                                   SizedBox(
                                     width: 24,
                                     height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2.5,
-                                      color: colorScheme.primary.withValues(
-                                        alpha: 0.6,
+                                    child: DiagnosticActivityMarker(
+                                      kind: AnimationActivityKind
+                                          .articleBodyLoading,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: colorScheme.primary.withValues(
+                                          alpha: 0.6,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -2338,7 +2348,7 @@ class _ArticlePageViewState extends State<ArticlePageView> {
       ],
     );
 
-    return Platform.isMacOS
+    final focusedResult = Platform.isMacOS
         ? Focus(
             focusNode: _focusNode,
             onKeyEvent: (node, event) {
@@ -2400,6 +2410,10 @@ class _ArticlePageViewState extends State<ArticlePageView> {
             child: result,
           )
         : result;
+    return DiagnosticActivityMarker(
+      kind: AnimationActivityKind.articleView,
+      child: focusedResult,
+    );
   }
 }
 

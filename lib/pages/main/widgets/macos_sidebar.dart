@@ -6,11 +6,13 @@ import '../../../common/constants/macos_layout_metrics.dart';
 import '../../../common/widgets/app_context_menu.dart';
 import '../../../common/widgets/app_glass.dart';
 import '../../../common/widgets/continuous_rectangle.dart';
+import '../../../common/widgets/diagnostic_activity_marker.dart';
 import '../../../common/widgets/feedback_toast.dart';
 import '../../../common/widgets/macos_window_drag_area.dart';
 import '../../../http/init.dart';
 import '../../../models/feed.dart';
 import '../../../services/feed_readability_settings_service.dart';
+import '../../../services/animation_activity_monitor.dart';
 import '../../../services/feed_silent_settings_service.dart';
 import '../../../services/feed_translation_settings_service.dart';
 import '../../../services/subscription_management_service.dart';
@@ -100,7 +102,12 @@ class MacOSSidebar extends StatelessWidget {
               child: Obx(() {
                 final state = subController.loadingState.value;
                 if (state is Loading) {
-                  return const Center(child: CircularProgressIndicator());
+                  return const Center(
+                    child: DiagnosticActivityMarker(
+                      kind: AnimationActivityKind.pageLoadingSpinner,
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
                 }
                 if (state is LoadError) {
                   return Center(

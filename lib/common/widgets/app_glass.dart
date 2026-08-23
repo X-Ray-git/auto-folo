@@ -7,8 +7,10 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../services/animation_activity_monitor.dart';
 import '../liquid_glass/liquid_glass.dart';
 import 'continuous_rectangle.dart';
+import 'diagnostic_activity_marker.dart';
 
 enum AppGlassTone { surface, panel, control }
 
@@ -1321,9 +1323,12 @@ class _AppGlassButtonState extends State<AppGlassButton> {
               if (widget.loading)
                 SizedBox.square(
                   dimension: 15,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.8,
-                    color: foreground,
+                  child: DiagnosticActivityMarker(
+                    kind: AnimationActivityKind.controlSpinner,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: foreground,
+                    ),
                   ),
                 )
               else
@@ -1443,9 +1448,8 @@ class MacGlassScrollArea extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.symmetric(horizontal: gutterWidth),
           child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(
-              context,
-            ).copyWith(scrollbars: false),
+            behavior: ScrollConfiguration.of(context)
+                .copyWith(scrollbars: false),
             child: child,
           ),
         ),

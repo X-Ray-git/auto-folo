@@ -50,6 +50,12 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-08-23 macOS 能耗检查点补充
+
+- 只读复核 `energy.jsonl` 与轮转文件共四千余条样本：隐藏窗口时帧数和 CPU 通常能正确回落；但可见窗口仍存在后台任务为空、动图计数为零时约 `77%–81% CPU` 的高峰，并有垃圾拦截页持续高帧率的长时样本，现有日志不足以定位具体组件。
+- schema 3 新增匿名 UI 生命周期计数，覆盖文章视图、骨架、正文加载、图片占位、文章卡片任务状态、页面/按钮加载、同步、质量过滤/关系建立进度、媒体加载/播放与 WebView；只在状态变化时更新内存，由原 15 秒采样器统一落盘。动图诊断同步拆分流连接、真实帧、首帧等待与错误计数。
+- 新增监控服务单元测试通过；`flutter test --no-pub` 266 项全部通过，macOS Debug 构建成功，`dart analyze lib test` 无新增 warning/error，仅保留 59 条既有 lint info，`git diff --check` 通过。仍需由用户使用包含该改动的构建持续观察。
+
 ## 2026-08-18 macOS 正文动图能耗门控
 
 - 真机运行中的高耗电样本在窗口失焦、任务队列为空时仍约占用 `52%–55% CPU` 并接近持续出帧；`sample` 栈集中在 `flutter::MultiFrameCodec.getNextFrame`，隐藏窗口后 CPU 与帧数归零，根因与正文中保持挂载的 GIF 一致。

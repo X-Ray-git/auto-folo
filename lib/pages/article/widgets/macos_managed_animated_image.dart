@@ -190,6 +190,7 @@ class _MacosManagedAnimatedImageState extends State<MacosManagedAnimatedImage> {
 
   void _handleImageError(Object error, StackTrace? stackTrace) {
     if (!mounted) return;
+    AnimatedImagePlaybackMonitor.recordStreamError();
     _failed = true;
     _detachImageStream();
     widget.onError?.call();
@@ -210,7 +211,7 @@ class _MacosManagedAnimatedImageState extends State<MacosManagedAnimatedImage> {
       _monitorToken,
       windowActive: _windowActive,
       nearViewport: _nearViewport,
-      playing: _streamAttached,
+      streamAttached: _streamAttached,
       hasFrame: _imageInfo != null,
     );
   }

@@ -1,5 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
+
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
@@ -8,10 +10,12 @@ import 'package:flutter_html/flutter_html.dart';
 import '../../common/widgets/app_glass.dart';
 import '../../common/widgets/article_card_chrome.dart';
 import '../../common/widgets/article_length_label.dart';
+import '../../common/widgets/diagnostic_activity_marker.dart';
 import '../../common/widgets/pill_tag.dart';
 import '../../common/widgets/card_press_effect.dart';
 import '../../models/article.dart';
 import '../../services/article_image_service.dart';
+import '../../services/animation_activity_monitor.dart';
 import '../../services/external_link_service.dart';
 import '../../services/translation_service.dart';
 import '../../services/summary_service.dart';
@@ -296,9 +300,13 @@ class _ArticleCardContentState extends State<_ArticleCardContent> {
                                 SizedBox(
                                   width: 10,
                                   height: 10,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: colorScheme.onPrimaryContainer,
+                                  child: DiagnosticActivityMarker(
+                                    kind: AnimationActivityKind
+                                        .articleCardStatusSpinner,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: colorScheme.onPrimaryContainer,
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 6),

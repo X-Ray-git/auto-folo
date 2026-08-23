@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../services/animation_activity_monitor.dart';
 import 'app_glass.dart';
+import 'diagnostic_activity_marker.dart';
 
 class AppGlassSyncButton extends StatefulWidget {
   final bool syncing;
@@ -74,43 +76,49 @@ class _AppGlassSyncButtonState extends State<AppGlassSyncButton>
     final cs = Theme.of(context).colorScheme;
     final syncing = widget.syncing;
     final enabled = !syncing && widget.onPressed != null;
-    return AppGlassTooltip(
-      message: syncing ? widget.syncingTooltip : widget.idleTooltip,
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
-        onExit: enabled
-            ? (_) => setState(() {
-                _hovered = false;
-                _pressed = false;
-              })
-            : null,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-          onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-          onTap: enabled ? widget.onPressed : null,
-          child: AnimatedScale(
-            scale: _pressed ? 0.96 : 1.0,
-            duration: const Duration(milliseconds: 120),
-            curve: Curves.easeOutCubic,
-            child: AppGlassRoundControlChrome(
-              enabled: enabled,
-              hovered: _hovered,
-              pressed: _pressed,
-              child: Center(
-                child: RotationTransition(
-                  turns: _spinController,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.rotationY(math.pi),
-                    child: Icon(
-                      Icons.sync,
-                      size: 18,
-                      color: syncing
-                          ? (widget.syncingColor ?? cs.primary)
-                          : (widget.idleColor ?? cs.onSurface),
+    return DiagnosticActivityMarker(
+      kind: AnimationActivityKind.syncSpinner,
+      active: syncing,
+      child: AppGlassTooltip(
+        message: syncing ? widget.syncingTooltip : widget.idleTooltip,
+        child: MouseRegion(
+          cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+          onEnter: enabled ? (_) => setState(() => _hovered = true) : null,
+          onExit: enabled
+              ? (_) => setState(() {
+                  _hovered = false;
+                  _pressed = false;
+                })
+              : null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+            onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
+            onTapCancel: enabled
+                ? () => setState(() => _pressed = false)
+                : null,
+            onTap: enabled ? widget.onPressed : null,
+            child: AnimatedScale(
+              scale: _pressed ? 0.96 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+              child: AppGlassRoundControlChrome(
+                enabled: enabled,
+                hovered: _hovered,
+                pressed: _pressed,
+                child: Center(
+                  child: RotationTransition(
+                    turns: _spinController,
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.rotationY(math.pi),
+                      child: Icon(
+                        Icons.sync,
+                        size: 18,
+                        color: syncing
+                            ? (widget.syncingColor ?? cs.primary)
+                            : (widget.idleColor ?? cs.onSurface),
+                      ),
                     ),
                   ),
                 ),

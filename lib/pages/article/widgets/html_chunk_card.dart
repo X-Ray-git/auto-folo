@@ -15,6 +15,7 @@ import 'package:html/parser.dart' as html_parser;
 import '../../../common/widgets/feedback_toast.dart';
 import '../../../common/widgets/app_context_menu.dart';
 import '../../../common/widgets/app_glass.dart';
+import '../../../common/widgets/diagnostic_activity_marker.dart';
 import '../../../utils/article_content_utils.dart';
 import '../../../utils/bilibili_embed_utils.dart';
 import '../../../utils/html_chunk_parser.dart';
@@ -23,6 +24,7 @@ import '../../../utils/html_contrast_utils.dart';
 import '../../../utils/image_clipboard.dart';
 import '../../../utils/macos_zoom_in_cursor.dart';
 import '../../../services/article_image_service.dart';
+import '../../../services/animation_activity_monitor.dart';
 import '../../../services/article_image_cache_service.dart';
 import '../../../services/external_link_service.dart';
 import 'bilibili_embed_player.dart';
@@ -1063,7 +1065,10 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
             child: SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              child: DiagnosticActivityMarker(
+                kind: AnimationActivityKind.imagePlaceholder,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
           ),
         );
@@ -1324,7 +1329,10 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage>
                       child: SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: DiagnosticActivityMarker(
+                          kind: AnimationActivityKind.imagePlaceholder,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
                     ),
                   ),
@@ -1353,7 +1361,10 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage>
                       child: SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: DiagnosticActivityMarker(
+                          kind: AnimationActivityKind.imagePlaceholder,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
                     ),
                   ),
@@ -1398,7 +1409,10 @@ class _ArticleInlineImageState extends State<_ArticleInlineImage>
                       child: SizedBox(
                         width: 24,
                         height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2),
+                        child: DiagnosticActivityMarker(
+                          kind: AnimationActivityKind.imagePlaceholder,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
                       ),
                     ),
                   ),

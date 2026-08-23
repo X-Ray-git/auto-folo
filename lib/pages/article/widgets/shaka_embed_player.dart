@@ -9,7 +9,9 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../../services/article_image_service.dart';
+import '../../../services/animation_activity_monitor.dart';
 import '../../../services/youtube_playback_server.dart';
+import '../../../common/widgets/diagnostic_activity_marker.dart';
 import '../../../utils/macos_webview_controls.dart';
 import 'article_video_playback_shortcut.dart';
 import 'media_play_button.dart';
@@ -318,6 +320,11 @@ class _ShakaEmbedPlayerState extends State<ShakaEmbedPlayer> {
           child: Stack(
             fit: StackFit.expand,
             children: [
+              DiagnosticActivityMarker(
+                kind: AnimationActivityKind.webViewVisible,
+                active: _controller != null,
+                child: const SizedBox.shrink(),
+              ),
               if (_controller != null) WebViewWidget(controller: _controller!),
               if (coverWebView) _buildIdleBackground(colorScheme),
               if (coverWebView)

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../common/widgets/diagnostic_activity_marker.dart';
+import '../../../services/animation_activity_monitor.dart';
+
 class MediaPlayButton extends StatelessWidget {
   const MediaPlayButton({
     super.key,
@@ -13,32 +16,36 @@ class MediaPlayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    return MouseRegion(
-      cursor: isLoading || onPressed == null
-          ? SystemMouseCursors.basic
-          : SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: isLoading ? null : onPressed,
-        child: Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            color: colorScheme.primary.withValues(alpha: 0.85),
-            shape: BoxShape.circle,
-          ),
-          child: isLoading
-              ? const Padding(
-                  padding: EdgeInsets.all(18),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
+    return DiagnosticActivityMarker(
+      kind: AnimationActivityKind.mediaLoading,
+      active: isLoading,
+      child: MouseRegion(
+        cursor: isLoading || onPressed == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: isLoading ? null : onPressed,
+          child: Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.85),
+              shape: BoxShape.circle,
+            ),
+            child: isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(
+                    Icons.play_arrow_rounded,
+                    size: 40,
                     color: Colors.white,
                   ),
-                )
-              : const Icon(
-                  Icons.play_arrow_rounded,
-                  size: 40,
-                  color: Colors.white,
-                ),
+          ),
         ),
       ),
     );

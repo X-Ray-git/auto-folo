@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../services/animation_activity_monitor.dart';
+import 'diagnostic_activity_marker.dart';
+
 class ShimmerCard extends StatefulWidget {
   final double width;
   final double height;
@@ -28,9 +31,10 @@ class _ShimmerCardState extends State<ShimmerCard>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
-    _animation = Tween<double>(begin: -2, end: 2).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _animation = Tween<double>(
+      begin: -2,
+      end: 2,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
   }
 
   @override
@@ -42,26 +46,29 @@ class _ShimmerCardState extends State<ShimmerCard>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return AnimatedBuilder(
-      animation: _animation,
-      builder: (_, child) {
-        return Container(
-          width: widget.width,
-          height: widget.height,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(widget.borderRadius),
-            gradient: LinearGradient(
-              begin: Alignment(_animation.value - 1, 0),
-              end: Alignment(_animation.value + 1, 0),
-              colors: [
-                cs.onSurface.withValues(alpha: 0.04),
-                cs.onSurface.withValues(alpha: 0.08),
-                cs.onSurface.withValues(alpha: 0.04),
-              ],
+    return DiagnosticActivityMarker(
+      kind: AnimationActivityKind.shimmer,
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (_, child) {
+          return Container(
+            width: widget.width,
+            height: widget.height,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(widget.borderRadius),
+              gradient: LinearGradient(
+                begin: Alignment(_animation.value - 1, 0),
+                end: Alignment(_animation.value + 1, 0),
+                colors: [
+                  cs.onSurface.withValues(alpha: 0.04),
+                  cs.onSurface.withValues(alpha: 0.08),
+                  cs.onSurface.withValues(alpha: 0.04),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -162,16 +169,19 @@ class _ShimmerFadeListState extends State<ShimmerFadeList>
 
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      physics: widget.physics ?? const NeverScrollableScrollPhysics(),
-      padding: widget.padding ?? const EdgeInsets.only(top: 6),
-      itemCount: widget.itemCount,
-      itemBuilder: (context, index) {
-        return FadeTransition(
-          opacity: _opacityAnim,
-          child: widget.itemBuilder(context, index),
-        );
-      },
+    return DiagnosticActivityMarker(
+      kind: AnimationActivityKind.shimmer,
+      child: ListView.builder(
+        physics: widget.physics ?? const NeverScrollableScrollPhysics(),
+        padding: widget.padding ?? const EdgeInsets.only(top: 6),
+        itemCount: widget.itemCount,
+        itemBuilder: (context, index) {
+          return FadeTransition(
+            opacity: _opacityAnim,
+            child: widget.itemBuilder(context, index),
+          );
+        },
+      ),
     );
   }
 }

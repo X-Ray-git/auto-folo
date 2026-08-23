@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../services/animation_activity_monitor.dart';
+import 'diagnostic_activity_marker.dart';
+
 class LoadingWidget extends StatelessWidget {
   final String? msg;
 
@@ -12,7 +15,10 @@ class LoadingWidget extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircularProgressIndicator(color: colorScheme.primary),
+          DiagnosticActivityMarker(
+            kind: AnimationActivityKind.pageLoadingSpinner,
+            child: CircularProgressIndicator(color: colorScheme.primary),
+          ),
           if (msg != null) ...[
             const SizedBox(height: 16),
             Text(

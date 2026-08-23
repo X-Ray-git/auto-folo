@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
+import '../../../common/widgets/diagnostic_activity_marker.dart';
+import '../../../services/animation_activity_monitor.dart';
 import '../../../services/article_relation_service.dart';
 import '../../../services/article_relation_worker.dart';
 import '../../../services/auto_filter_worker.dart';
@@ -34,6 +36,7 @@ class FilterReviewPipelineStatus extends StatelessWidget {
           label: '质量过滤',
           detail: qualityPending > 0 ? '$qualityPending' : '完成',
           active: qualityPending > 0,
+          activityKind: AnimationActivityKind.qualityFilterSpinner,
           fontSize: fontSize,
         ),
         _PipelineStatusItem(
@@ -46,6 +49,7 @@ class FilterReviewPipelineStatus extends StatelessWidget {
               ? '$relationPending/${ArticleRelationService.batchSize}'
               : '完成',
           active: relationEnabled && relationRunning,
+          activityKind: AnimationActivityKind.relationSpinner,
           fontSize: fontSize,
         ),
       ];
@@ -70,12 +74,14 @@ class _PipelineStatusItem extends StatelessWidget {
     required this.label,
     required this.detail,
     required this.active,
+    required this.activityKind,
     required this.fontSize,
   });
 
   final String label;
   final String detail;
   final bool active;
+  final AnimationActivityKind activityKind;
   final double fontSize;
 
   @override
@@ -87,11 +93,15 @@ class _PipelineStatusItem extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        SizedBox.square(
-          dimension: 9,
-          child: active
-              ? CircularProgressIndicator(strokeWidth: 1.5, color: color)
-              : Icon(Icons.circle, size: 5, color: color),
+        DiagnosticActivityMarker(
+          kind: activityKind,
+          active: active,
+          child: SizedBox.square(
+            dimension: 9,
+            child: active
+                ? CircularProgressIndicator(strokeWidth: 1.5, color: color)
+                : Icon(Icons.circle, size: 5, color: color),
+          ),
         ),
         const SizedBox(width: 4),
         Text(

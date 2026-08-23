@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../pages/main/main_controller.dart';
 import '../pages/timeline/timeline_controller.dart';
+import 'animation_activity_monitor.dart';
 import 'article_image_cache_service.dart';
 import 'animated_image_playback_monitor.dart';
 import 'article_relation_service.dart';
@@ -123,6 +124,7 @@ abstract final class MacosEnergyDiagnosticService {
 
       final image = ArticleImageCacheService.diagnosticSnapshot;
       final animatedImages = AnimatedImagePlaybackMonitor.takeSnapshot();
+      final animations = AnimationActivityMonitor.takeSnapshot();
       final syncing = Get.isRegistered<TimelineController>()
           ? Get.find<TimelineController>().isSyncing.value
           : false;
@@ -165,7 +167,7 @@ abstract final class MacosEnergyDiagnosticService {
           ? Get.find<MainController>().currentIndex.value
           : null;
       final record = <String, Object?>{
-        'schema': 2,
+        'schema': 3,
         'at': now.toUtc().toIso8601String(),
         'process': {
           'cpuPercent': double.parse(cpuPercent.toStringAsFixed(2)),
@@ -187,6 +189,7 @@ abstract final class MacosEnergyDiagnosticService {
           'maxRasterMs': _maxRasterMicros / 1000,
         },
         'tasks': taskCounts,
+        'animations': animations,
         'animatedImages': animatedImages,
       };
       await _rotateIfNeeded();

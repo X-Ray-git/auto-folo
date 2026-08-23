@@ -1,9 +1,12 @@
 import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../services/article_image_service.dart';
+import '../../../services/animation_activity_monitor.dart';
+import '../../../common/widgets/diagnostic_activity_marker.dart';
 import '../../../services/external_link_service.dart';
 import '../../../utils/duration_extension.dart';
 import 'article_video_playback_shortcut.dart';
@@ -209,6 +212,11 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
+                  DiagnosticActivityMarker(
+                    kind: AnimationActivityKind.nativeVideoPlaying,
+                    active: _controller!.value.isPlaying,
+                    child: const SizedBox.shrink(),
+                  ),
                   ColoredBox(
                     color: Colors.black,
                     child: Center(
