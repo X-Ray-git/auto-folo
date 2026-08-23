@@ -48,4 +48,50 @@ void main() {
     expect(LlmConfig.relationDefault.maxTokens, 32768);
     expect(LlmConfig.relationDefault.concurrency, 1);
   });
+
+  test(
+    'vision model settings default, persist, and reset independently',
+    () async {
+      expect(LlmConfig.loadSummaryVisionModel(), LlmConfig.defaultVisionModel);
+      expect(LlmConfig.loadFilterVisionModel(), LlmConfig.defaultVisionModel);
+
+      await LlmConfig.saveSummaryVisionModel(LlmConfig.defaultVisionModel);
+      await LlmConfig.saveFilterVisionModel(LlmConfig.defaultVisionModel);
+
+      expect(
+        GStorage.setting.get(LlmConfig.summaryVisionModelKey),
+        LlmConfig.defaultVisionModel,
+      );
+      expect(
+        GStorage.setting.get(LlmConfig.filterVisionModelKey),
+        LlmConfig.defaultVisionModel,
+      );
+
+      await LlmConfig.resetSummary();
+      expect(
+        GStorage.setting.containsKey(LlmConfig.summaryVisionModelKey),
+        isFalse,
+      );
+      expect(
+        GStorage.setting.containsKey(LlmConfig.filterVisionModelKey),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'unsupported stored vision models fall back and cannot be saved',
+    () async {
+      await GStorage.setting.put(
+        LlmConfig.summaryVisionModelKey,
+        'unsupported-vision-model',
+      );
+
+      expect(LlmConfig.loadSummaryVisionModel(), LlmConfig.defaultVisionModel);
+      await expectLater(
+        LlmConfig.saveSummaryVisionModel('unsupported-vision-model'),
+        throwsArgumentError,
+      );
+    },
+  );
 }

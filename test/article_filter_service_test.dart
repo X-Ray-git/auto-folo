@@ -17,13 +17,25 @@ ArticleModel _article() => ArticleModel(
   publishedAt: '2026-08-01T00:00:00Z',
 );
 
-Response<dynamic> _successResponse() => Response<dynamic>(
+ArticleModel _imageArticle() => ArticleModel(
+  entryId: 'filter-image-entry',
+  feedId: 'feed-1',
+  feedTitle: '测试源',
+  title: '图片文章',
+  url: 'https://example.com/article',
+  content: '<p>正文很短</p><img src="https://example.com/evidence.png">',
+  publishedAt: '2026-08-01T00:00:00Z',
+);
+
+Response<dynamic> _successResponse([
+  String content = '{"should_reject":false,"reason":"内容正常"}',
+]) => Response<dynamic>(
   requestOptions: RequestOptions(path: '/chat/completions'),
   statusCode: 200,
   data: {
     'choices': [
       {
-        'message': {'content': '{"should_reject":false,"reason":"内容正常"}'},
+        'message': {'content': content},
       },
     ],
   },
@@ -85,5 +97,88 @@ void main() {
     expect(usage.requestCount, 3);
     expect(usage.failureCount, 3);
     expect(usage.successCount, 0);
+  });
+
+  test('hands image-centric filtering to the configured vision model', () async {
+    final models = <String>[];
+    ArticleFilterService.debugPostOverride = (_, {data, options}) async {
+      final body = Map<String, dynamic>.from(data! as Map);
+      models.add(body['model'] as String);
+      if (models.length == 1) {
+        return _successResponse(
+          '{"needs_visual_context":true,"should_reject":false,"reason":"需要图片"}',
+        );
+      }
+      final messages = body['messages'] as List<dynamic>;
+      final userMessage = Map<String, dynamic>.from(messages.last as Map);
+      expect(userMessage['content'], isA<List<dynamic>>());
+      return _successResponse('{"should_reject":false,"reason":"图片包含有效信息"}');
+    };
+
+    final result = await ArticleFilterService.filterArticle(_imageArticle());
+
+    expect(result.shouldReject, isFalse);
+    expect(result.reason, '图片包含有效信息');
+    expect(models, ['deepseek-v4-flash', 'deepseek-v4-flash-vision-exp']);
+  });
+
+  test('does not use vision when text evidence is sufficient', () async {
+    var requests = 0;
+    ArticleFilterService.debugPostOverride = (_, {data, options}) async {
+      requests++;
+      return _successResponse(
+        '{"needs_visual_context":false,"should_reject":false,"reason":"文字证据充分"}',
+      );
+    };
+
+    final result = await ArticleFilterService.filterArticle(_imageArticle());
+
+    expect(requests, 1);
+    expect(result.shouldReject, isFalse);
+    expect(result.reason, '文字证据充分');
+  });
+
+  test(
+    'missing handoff field falls back to vision for image articles',
+    () async {
+      var requests = 0;
+      ArticleFilterService.debugPostOverride = (_, {data, options}) async {
+        requests++;
+        if (requests == 1) {
+          return _successResponse(
+            '{"should_reject":true,"reason":"旧 Prompt 返回结构"}',
+          );
+        }
+        return _successResponse(
+          '{"should_reject":false,"reason":"视觉证据推翻文本判断"}',
+        );
+      };
+
+      final result = await ArticleFilterService.filterArticle(_imageArticle());
+
+      expect(requests, 2);
+      expect(result.shouldReject, isFalse);
+      expect(result.reason, '视觉证据推翻文本判断');
+    },
+  );
+
+  test('vision failure conservatively keeps the article', () async {
+    await GStorage.setting.put('auto_retry_max_count', 0);
+    var requests = 0;
+    ArticleFilterService.debugPostOverride = (_, {data, options}) async {
+      requests++;
+      if (requests == 1) {
+        return _successResponse(
+          '{"needs_visual_context":true,"should_reject":false,"reason":"需要图片"}',
+        );
+      }
+      throw _requestFailure();
+    };
+
+    final result = await ArticleFilterService.filterArticle(_imageArticle());
+
+    expect(requests, 2);
+    expect(result.shouldReject, isFalse);
+    expect(result.reason, contains('视觉信息暂不可用'));
   });
 }

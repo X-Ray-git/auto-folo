@@ -24,6 +24,7 @@ import '../../services/article_relation_prompt_service.dart';
 import '../../services/article_relation_service.dart';
 import '../../services/article_relation_worker.dart';
 import '../../services/llm_config.dart';
+import '../../services/llm_multimodal_protocol.dart';
 import '../../services/settings_backup_service.dart';
 import '../../services/folo_auth_service.dart';
 import '../../services/summary_service.dart';
@@ -1131,6 +1132,11 @@ class _SettingsPageState extends State<SettingsPage> {
                               loadConfig: LlmConfig.loadSummary,
                               saveConfig: LlmConfig.saveSummary,
                               resetConfig: LlmConfig.resetSummary,
+                              visionModelOptions:
+                                  LlmConfig.supportedVisionModels,
+                              loadVisionModel: LlmConfig.loadSummaryVisionModel,
+                              saveVisionModel: LlmConfig.saveSummaryVisionModel,
+                              onVisionModelChanged: () => setState(() {}),
                             ),
                             const SizedBox(height: 10),
                             _LlmConfigCard(
@@ -1139,6 +1145,11 @@ class _SettingsPageState extends State<SettingsPage> {
                               loadConfig: LlmConfig.loadFilter,
                               saveConfig: LlmConfig.saveFilter,
                               resetConfig: LlmConfig.resetFilter,
+                              visionModelOptions:
+                                  LlmConfig.supportedVisionModels,
+                              loadVisionModel: LlmConfig.loadFilterVisionModel,
+                              saveVisionModel: LlmConfig.saveFilterVisionModel,
+                              onVisionModelChanged: () => setState(() {}),
                             ),
                             const SizedBox(height: 10),
                             _ArticleRelationFeatureToggle(
@@ -1168,11 +1179,16 @@ class _SettingsPageState extends State<SettingsPage> {
                           children: [
                             _PromptCard(
                               title: '摘要 AI Prompt',
-                              subtitle: '自定义摘要规则（返回必须是特定 JSON 格式）',
+                              subtitle: '自定义摘要内容与表达规则',
                               hintText: '输入摘要规则...',
-                              emptyWarning: '请保留默认的 JSON 结构指令',
+                              emptyWarning: '请输入摘要规则',
                               savedMessage: '新摘要将从下次请求生效',
-                              helpText: '这里配置 System Prompt。程序会自动拼接文章标题和 HTML 正文作为 User Prompt；如需动态目标语言，可保留 {targetLang}。',
+                              helpText: '这里只配置业务规则；程序会自动拼接文章标题和 HTML 正文。动态目标语言可保留 {targetLang}，响应结构与视觉转交由下方只读协议控制。',
+                              protocolText:
+                                  LlmMultimodalProtocol.summaryProtocolForDisplay(
+                                    visionModel:
+                                        LlmConfig.loadSummaryVisionModel(),
+                                  ),
                               loadPrompt: () =>
                                   SummaryService.getPrompt('{targetLang}'),
                               savePrompt: SummaryService.setPrompt,
@@ -1198,6 +1214,12 @@ class _SettingsPageState extends State<SettingsPage> {
                               hintText: '输入过滤规则...',
                               emptyWarning: '请保留至少一条过滤规则',
                               savedMessage: '新过滤将从下次请求生效',
+                              helpText: '这里只配置过滤标准；响应结构与视觉转交由下方只读协议控制。',
+                              protocolText:
+                                  LlmMultimodalProtocol.filterProtocolForDisplay(
+                                    visionModel:
+                                        LlmConfig.loadFilterVisionModel(),
+                                  ),
                               loadPrompt: ArticleFilterService.getPrompt,
                               savePrompt: ArticleFilterService.setPrompt,
                               resetPrompt: ArticleFilterService.resetPrompt,
@@ -1685,6 +1707,10 @@ class _SettingsPageState extends State<SettingsPage> {
               loadConfig: LlmConfig.loadSummary,
               saveConfig: LlmConfig.saveSummary,
               resetConfig: LlmConfig.resetSummary,
+              visionModelOptions: LlmConfig.supportedVisionModels,
+              loadVisionModel: LlmConfig.loadSummaryVisionModel,
+              saveVisionModel: LlmConfig.saveSummaryVisionModel,
+              onVisionModelChanged: () => setState(() {}),
             ),
             const SizedBox(height: 10),
             _LlmConfigCard(
@@ -1693,6 +1719,10 @@ class _SettingsPageState extends State<SettingsPage> {
               loadConfig: LlmConfig.loadFilter,
               saveConfig: LlmConfig.saveFilter,
               resetConfig: LlmConfig.resetFilter,
+              visionModelOptions: LlmConfig.supportedVisionModels,
+              loadVisionModel: LlmConfig.loadFilterVisionModel,
+              saveVisionModel: LlmConfig.saveFilterVisionModel,
+              onVisionModelChanged: () => setState(() {}),
             ),
             const SizedBox(height: 10),
             _ArticleRelationFeatureToggle(
@@ -1717,11 +1747,14 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             _PromptCard(
               title: '摘要 AI Prompt',
-              subtitle: '自定义摘要规则（返回必须是特定 JSON 格式）',
+              subtitle: '自定义摘要内容与表达规则',
               hintText: '输入摘要规则...',
-              emptyWarning: '请保留默认的 JSON 结构指令',
+              emptyWarning: '请输入摘要规则',
               savedMessage: '新摘要将从下次请求生效',
-              helpText: '程序会自动拼接文章标题和 HTML 正文；动态目标语言可保留 {targetLang}。',
+              helpText: '这里只配置业务规则；程序会自动拼接文章标题和 HTML 正文。动态目标语言可保留 {targetLang}，响应结构与视觉转交由下方只读协议控制。',
+              protocolText: LlmMultimodalProtocol.summaryProtocolForDisplay(
+                visionModel: LlmConfig.loadSummaryVisionModel(),
+              ),
               loadPrompt: () => SummaryService.getPrompt('{targetLang}'),
               savePrompt: SummaryService.setPrompt,
               resetPrompt: SummaryService.resetPrompt,
@@ -1745,6 +1778,10 @@ class _SettingsPageState extends State<SettingsPage> {
               hintText: '输入过滤规则...',
               emptyWarning: '请保留至少一条过滤规则',
               savedMessage: '新过滤将从下次请求生效',
+              helpText: '这里只配置过滤标准；响应结构与视觉转交由下方只读协议控制。',
+              protocolText: LlmMultimodalProtocol.filterProtocolForDisplay(
+                visionModel: LlmConfig.loadFilterVisionModel(),
+              ),
               loadPrompt: ArticleFilterService.getPrompt,
               savePrompt: ArticleFilterService.setPrompt,
               resetPrompt: ArticleFilterService.resetPrompt,
@@ -2227,6 +2264,10 @@ class _SettingsPageState extends State<SettingsPage> {
             loadConfig: LlmConfig.loadSummary,
             saveConfig: LlmConfig.saveSummary,
             resetConfig: LlmConfig.resetSummary,
+            visionModelOptions: LlmConfig.supportedVisionModels,
+            loadVisionModel: LlmConfig.loadSummaryVisionModel,
+            saveVisionModel: LlmConfig.saveSummaryVisionModel,
+            onVisionModelChanged: () => setState(() {}),
           ),
 
           const SizedBox(height: 12),
@@ -2237,6 +2278,10 @@ class _SettingsPageState extends State<SettingsPage> {
             loadConfig: LlmConfig.loadFilter,
             saveConfig: LlmConfig.saveFilter,
             resetConfig: LlmConfig.resetFilter,
+            visionModelOptions: LlmConfig.supportedVisionModels,
+            loadVisionModel: LlmConfig.loadFilterVisionModel,
+            saveVisionModel: LlmConfig.saveFilterVisionModel,
+            onVisionModelChanged: () => setState(() {}),
           ),
 
           const SizedBox(height: 12),
@@ -2256,11 +2301,14 @@ class _SettingsPageState extends State<SettingsPage> {
           // Prompt 配置
           _PromptCard(
             title: '摘要 AI Prompt',
-            subtitle: '自定义摘要规则（返回必须是特定 JSON 格式）',
+            subtitle: '自定义摘要内容与表达规则',
             hintText: '输入摘要规则...',
-            emptyWarning: '请保留默认的 JSON 结构指令',
+            emptyWarning: '请输入摘要规则',
             savedMessage: '新摘要将从下次请求生效',
-            helpText: '这里配置 System Prompt。程序会自动拼接文章标题和 HTML 正文作为 User Prompt；如需动态目标语言，可保留 {targetLang}。',
+            helpText: '这里只配置业务规则；程序会自动拼接文章标题和 HTML 正文。动态目标语言可保留 {targetLang}，响应结构与视觉转交由下方只读协议控制。',
+            protocolText: LlmMultimodalProtocol.summaryProtocolForDisplay(
+              visionModel: LlmConfig.loadSummaryVisionModel(),
+            ),
             loadPrompt: () => SummaryService.getPrompt('{targetLang}'),
             savePrompt: SummaryService.setPrompt,
             resetPrompt: SummaryService.resetPrompt,
@@ -2284,6 +2332,10 @@ class _SettingsPageState extends State<SettingsPage> {
             hintText: '输入过滤规则...',
             emptyWarning: '请保留至少一条过滤规则',
             savedMessage: '新过滤将从下次请求生效',
+            helpText: '这里只配置过滤标准；响应结构与视觉转交由下方只读协议控制。',
+            protocolText: LlmMultimodalProtocol.filterProtocolForDisplay(
+              visionModel: LlmConfig.loadFilterVisionModel(),
+            ),
             loadPrompt: ArticleFilterService.getPrompt,
             savePrompt: ArticleFilterService.setPrompt,
             resetPrompt: ArticleFilterService.resetPrompt,
@@ -3994,6 +4046,7 @@ class _PromptCard extends StatefulWidget {
   final String emptyWarning;
   final String savedMessage;
   final String? helpText;
+  final String? protocolText;
   final String Function() loadPrompt;
   final Future<void> Function(String) savePrompt;
   final void Function() resetPrompt;
@@ -4005,6 +4058,7 @@ class _PromptCard extends StatefulWidget {
     required this.emptyWarning,
     required this.savedMessage,
     this.helpText,
+    this.protocolText,
     required this.loadPrompt,
     required this.savePrompt,
     required this.resetPrompt,
@@ -4081,6 +4135,32 @@ class _PromptCardState extends State<_PromptCard> {
             ),
             style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
           ),
+        if (widget.protocolText != null) ...[
+          const SizedBox(height: 12),
+          if (isMac)
+            AppGlassTextField(
+              key: ValueKey(widget.protocolText),
+              initialValue: widget.protocolText!,
+              label: '程序内置协议（只读）',
+              helper: '协议文本随版本维护且不导出；视觉模型选择单独备份',
+              maxLines: 12,
+              monospace: true,
+              readOnly: true,
+            )
+          else
+            TextFormField(
+              key: ValueKey(widget.protocolText),
+              initialValue: widget.protocolText!,
+              maxLines: 12,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: '程序内置协议（只读）',
+                helperText: '协议文本随版本维护且不导出；视觉模型选择单独备份',
+                border: OutlineInputBorder(),
+              ),
+              style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+            ),
+        ],
         const SizedBox(height: 12),
         if (isMac)
           Align(
@@ -4361,8 +4441,12 @@ class _LlmConfigCard extends StatefulWidget {
   final Future<void> Function() resetConfig;
   final bool concurrencyEditable;
   final bool showRelationSchedule;
+  final List<String> visionModelOptions;
+  final String Function()? loadVisionModel;
+  final Future<void> Function(String)? saveVisionModel;
+  final VoidCallback? onVisionModelChanged;
 
-  const _LlmConfigCard({
+  _LlmConfigCard({
     required this.title,
     required this.defaultConfig,
     required this.loadConfig,
@@ -4370,7 +4454,14 @@ class _LlmConfigCard extends StatefulWidget {
     required this.resetConfig,
     this.concurrencyEditable = true,
     this.showRelationSchedule = false,
-  });
+    this.visionModelOptions = const [],
+    this.loadVisionModel,
+    this.saveVisionModel,
+    this.onVisionModelChanged,
+  }) : assert(
+         visionModelOptions.isEmpty ||
+             (loadVisionModel != null && saveVisionModel != null),
+       );
 
   @override
   State<_LlmConfigCard> createState() => _LlmConfigCardState();
@@ -4378,6 +4469,7 @@ class _LlmConfigCard extends StatefulWidget {
 
 class _LlmConfigCardState extends State<_LlmConfigCard> {
   late LlmConfig _config;
+  String? _visionModel;
   late final TextEditingController _temperatureController;
   late final TextEditingController _concurrencyController;
   final _temperatureFocusNode = FocusNode();
@@ -4393,6 +4485,7 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
   void initState() {
     super.initState();
     _config = _normalizedConfig(widget.loadConfig());
+    _visionModel = widget.loadVisionModel?.call();
     _temperatureController = TextEditingController(
       text: _config.temperature.toString(),
     );
@@ -4459,7 +4552,10 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
       return true;
     } catch (_) {
       if (mounted && revision == _writeRevision) {
-        setState(() => _applyConfig(widget.loadConfig()));
+        setState(() {
+          _applyConfig(widget.loadConfig());
+          _visionModel = widget.loadVisionModel?.call();
+        });
         AppFeedback.error('设置保存失败', '已恢复为上一次成功保存的参数');
       }
       return false;
@@ -4469,7 +4565,25 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
   void _saveImmediately(LlmConfig config) {
     final normalized = _normalizedConfig(config);
     setState(() => _config = normalized);
-    unawaited(_enqueueWrite(() => widget.saveConfig(normalized)));
+    unawaited(_enqueueWrite(() => _saveState(normalized, _visionModel)));
+  }
+
+  Future<void> _saveState(LlmConfig config, String? visionModel) async {
+    await widget.saveConfig(config);
+    final saveVisionModel = widget.saveVisionModel;
+    if (saveVisionModel != null && visionModel != null) {
+      await saveVisionModel(visionModel);
+    }
+  }
+
+  void _saveVisionModel(String model) {
+    if (model == _visionModel) return;
+    setState(() => _visionModel = model);
+    unawaited(
+      _enqueueWrite(() => _saveState(_config, model)).then((saved) {
+        if (saved) widget.onVisionModelChanged?.call();
+      }),
+    );
   }
 
   Future<void> _saveTemperature() async {
@@ -4483,7 +4597,7 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
 
     final next = _config.copyWith(temperature: temp);
     setState(() => _config = next);
-    await _enqueueWrite(() => widget.saveConfig(next));
+    await _enqueueWrite(() => _saveState(next, _visionModel));
   }
 
   Future<void> _saveConcurrency() async {
@@ -4497,12 +4611,18 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
 
     final next = _config.copyWith(concurrency: concurrency);
     setState(() => _config = next);
-    await _enqueueWrite(() => widget.saveConfig(next));
+    await _enqueueWrite(() => _saveState(next, _visionModel));
   }
 
   Future<void> _reset() async {
-    setState(() => _applyConfig(widget.defaultConfig));
+    setState(() {
+      _applyConfig(widget.defaultConfig);
+      _visionModel = widget.visionModelOptions.isEmpty
+          ? null
+          : widget.visionModelOptions.first;
+    });
     if (await _enqueueWrite(widget.resetConfig) && mounted) {
+      widget.onVisionModelChanged?.call();
       AppFeedback.success('${widget.title}已重置', '默认参数已立即保存');
     }
   }
@@ -4546,7 +4666,7 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
   Widget _buildMacContent() {
     return Column(
       children: [
-        _MacGlassSegmentedField<String>(
+        _MacGlassSelectField<String>(
           value: _config.model,
           options: _models,
           labelFor: (value) => value,
@@ -4554,6 +4674,17 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
           onChanged: (value) =>
               _saveImmediately(_config.copyWith(model: value)),
         ),
+        if (_visionModel != null) ...[
+          const SizedBox(height: 10),
+          _MacGlassSelectField<String>(
+            value: _visionModel!,
+            options: widget.visionModelOptions,
+            labelFor: (value) => value,
+            label: '视觉模型',
+            helper: '文字不足时由程序自动转交；当前支持 ${widget.visionModelOptions.length} 个模型',
+            onChanged: _saveVisionModel,
+          ),
+        ],
         const SizedBox(height: 10),
         _MacGlassSegmentedField<bool>(
           value: _config.thinking,
@@ -4629,6 +4760,17 @@ class _LlmConfigCardState extends State<_LlmConfigCard> {
           onChanged: (value) =>
               _saveImmediately(_config.copyWith(model: value)),
         ),
+        if (_visionModel != null) ...[
+          const SizedBox(height: 12),
+          MobileSettingsSelectField<String>(
+            value: _visionModel!,
+            options: widget.visionModelOptions,
+            labelFor: (value) => value,
+            label: '视觉模型',
+            helper: '文字不足时由程序自动转交；当前支持 ${widget.visionModelOptions.length} 个模型',
+            onChanged: _saveVisionModel,
+          ),
+        ],
         const SizedBox(height: 12),
         MobileSettingsSelectField<bool>(
           value: _config.thinking,

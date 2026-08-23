@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:get/get.dart';
+import 'package:get/get.dart' hide Response;
 
 import '../models/article.dart';
 import '../utils/article_content_utils.dart';
@@ -11,6 +11,8 @@ import 'llm_config.dart';
 import 'llm_usage_ledger.dart';
 import 'account_session_guard.dart';
 import 'article_relation_service.dart';
+import 'article_visual_context_service.dart';
+import 'llm_multimodal_protocol.dart';
 
 enum SummaryStatus { idle, pending, done, error }
 
@@ -80,6 +82,14 @@ abstract final class SummaryService {
     ),
   );
 
+  @visibleForTesting
+  static Future<Response<dynamic>> Function(
+    String path, {
+    Object? data,
+    Options? options,
+  })?
+  debugPostOverride;
+
   static final RxMap<String, SummaryRecord> _records =
       <String, SummaryRecord>{}.obs;
   static final Map<String, Future<SummaryRecord>> _inFlight = {};
@@ -111,11 +121,10 @@ abstract final class SummaryService {
 你是一个专业的文章摘要助手。请用{targetLang}生成一个简洁的文章摘要。
 
 要求：
-1. 只返回 JSON，不要返回 markdown、解释或代码块
-2. JSON 结构必须是：{"summary":"..."}
-3. 摘要应该抓住文章的核心观点和重要信息
-4. 如果原文内容较长，请控制在一到两句话，约 100-300 字；如果原文极短（如推文），请保持摘要同样简短，绝对不能超过原文长度，禁止自行发散或补充未提及细节
-5. 你无法读取图片内容。请仅基于文本摘要；如果有效文本不足以概括，请在 summary 中如实说明，不要编造图片细节。
+1. 摘要应该抓住文章的核心观点和重要信息
+2. 如果原文内容较长，请控制在一到两句话，约 100-300 字
+3. 如果原文极短（如推文），请保持摘要同样简短，绝对不能超过原文长度
+4. 禁止自行发散或补充文字与图片中均未提及的细节
 ''';
 
   static void ensureHydrated() {
@@ -249,6 +258,14 @@ abstract final class SummaryService {
       return record;
     }
 
+    final visualContext = ArticleVisualContextService.prepare(
+      article,
+      htmlContent,
+    );
+    final articlePayload =
+        '标题：\n${article.title}\n\nHTML：\n<html>$htmlContent</html>\n\n'
+        '${visualContext.structureMetadata}';
+
     final systemPrompt = getPrompt(targetLang);
     final maxRetries =
         GStorage.setting.get('auto_retry_max_count', defaultValue: 3) as int;
@@ -256,73 +273,66 @@ abstract final class SummaryService {
 
     for (int attempt = 1; attempt <= totalAttempts; attempt++) {
       final llmConfig = LlmConfig.loadSummary();
-      final trace = LlmRequestTrace(
-        task: LlmTaskType.summary,
-        config: llmConfig,
-        prompt: systemPrompt,
-        articleId: article.entryId,
-        attempt: attempt,
-      );
       try {
-        final requestBody = <String, dynamic>{
-          'messages': [
-            {'role': 'system', 'content': systemPrompt},
-            {
-              'role': 'user',
-              'content':
-                  '标题：\n${article.title}\n\nHTML：\n<html>$htmlContent</html>',
-            },
-          ],
-          'response_format': {'type': 'json_object'},
-          'stream': false,
-          ...llmConfig.toRequestBody(),
-        };
-
-        final response = await _dio.post(
-          '/chat/completions',
-          data: requestBody,
-          options: Options(
-            headers: {
-              'Authorization': 'Bearer $apiKey',
-              'Content-Type': 'application/json',
-            },
+        final parsed = await _requestJson(
+          apiKey: apiKey,
+          articleId: article.entryId,
+          attempt: attempt,
+          accountRevision: accountRevision,
+          config: llmConfig,
+          businessPrompt: systemPrompt,
+          protocol: LlmMultimodalProtocol.summaryText,
+          messages: LlmMultimodalProtocol.textMessages(
+            protocol: LlmMultimodalProtocol.summaryText,
+            businessPrompt: systemPrompt,
+            articlePayload: articlePayload,
           ),
         );
-        await trace.recordResponse(
-          response.data,
-          httpStatus: response.statusCode,
-        );
-        if (!AccountSessionGuard.isCurrent(accountRevision)) {
-          throw const _StaleAccountOperation();
-        }
+        final textSummary = _summaryFromJson(parsed);
+        final handoffValue = parsed['needs_visual_context'];
+        final needsVisualContext =
+            visualContext.hasImages &&
+            (handoffValue is bool ? handoffValue : true);
+        var finalSummary = textSummary;
 
-        final content = _extractMessageContent(response.data);
-        if (content == null || content.trim().isEmpty) {
-          throw StateError('DeepSeek returned an empty summary result');
-        }
-
-        Map<String, dynamic> parsed;
-        try {
-          parsed = jsonDecode(
-            _normalizeJsonPayload(content),
-          ) as Map<String, dynamic>;
-        } on FormatException {
-          final recovered = _extractJsonObject(content);
-          if (recovered != null) {
-            parsed = recovered;
-          } else {
-            rethrow;
+        if (needsVisualContext) {
+          final visionConfig = LlmMultimodalProtocol.visionConfig(
+            llmConfig,
+            visionModel: LlmConfig.loadSummaryVisionModel(),
+          );
+          try {
+            final visionParsed = await _requestJson(
+              apiKey: apiKey,
+              articleId: article.entryId,
+              attempt: attempt,
+              accountRevision: accountRevision,
+              config: visionConfig,
+              businessPrompt: systemPrompt,
+              protocol: LlmMultimodalProtocol.summaryVision,
+              messages: LlmMultimodalProtocol.visionMessages(
+                protocol: LlmMultimodalProtocol.summaryVision,
+                businessPrompt: systemPrompt,
+                articlePayload: articlePayload,
+                imageUrls: visualContext.imageUrls,
+              ),
+            );
+            finalSummary = _summaryFromJson(visionParsed);
+          } catch (error) {
+            if (error is _StaleAccountOperation ||
+                !AccountSessionGuard.isCurrent(accountRevision)) {
+              rethrow;
+            }
+            if (attempt < totalAttempts) rethrow;
+            debugPrint(
+              '[Summary] Vision fallback failed for ${article.entryId}; '
+              'using the text-only result.',
+            );
           }
-        }
-        final summaryText = (parsed['summary'] ?? '').toString().trim();
-
-        if (summaryText.isEmpty) {
-          throw StateError('DeepSeek summary result missing summary field');
         }
 
         final record = SummaryRecord(
           status: SummaryStatus.done,
-          summaryText: summaryText,
+          summaryText: finalSummary,
           updatedAt: DateTime.now().millisecondsSinceEpoch,
         );
         await _writeCompletedRecord(
@@ -331,10 +341,8 @@ abstract final class SummaryService {
           accountRevision: accountRevision,
           deferRelationTail: deferRelationTail,
         );
-        await trace.complete();
         return record;
       } catch (e) {
-        await trace.fail(e);
         if (e is _StaleAccountOperation ||
             !AccountSessionGuard.isCurrent(accountRevision)) {
           rethrow;
@@ -377,6 +385,87 @@ abstract final class SummaryService {
       errorMessage: '重试次数已用尽',
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
+  }
+
+  static Future<Map<String, dynamic>> _requestJson({
+    required String apiKey,
+    required String articleId,
+    required int attempt,
+    required int accountRevision,
+    required LlmConfig config,
+    required String businessPrompt,
+    required String protocol,
+    required List<Map<String, dynamic>> messages,
+  }) async {
+    final requestBody = <String, dynamic>{
+      'messages': messages,
+      'response_format': {'type': 'json_object'},
+      'stream': false,
+      ...config.toRequestBody(),
+    };
+    final trace = LlmRequestTrace(
+      task: LlmTaskType.summary,
+      config: config,
+      prompt: LlmMultimodalProtocol.tracePrompt(protocol, businessPrompt),
+      articleId: articleId,
+      attempt: attempt,
+    );
+
+    try {
+      final options = Options(
+        headers: {
+          'Authorization': 'Bearer $apiKey',
+          'Content-Type': 'application/json',
+        },
+      );
+      final postOverride = debugPostOverride;
+      final response = postOverride != null
+          ? await postOverride(
+              '/chat/completions',
+              data: requestBody,
+              options: options,
+            )
+          : await _dio.post(
+              '/chat/completions',
+              data: requestBody,
+              options: options,
+            );
+      await trace.recordResponse(
+        response.data,
+        httpStatus: response.statusCode,
+      );
+      if (!AccountSessionGuard.isCurrent(accountRevision)) {
+        throw const _StaleAccountOperation();
+      }
+
+      final content = _extractMessageContent(response.data);
+      if (content == null || content.trim().isEmpty) {
+        throw StateError('DeepSeek returned an empty summary result');
+      }
+
+      Map<String, dynamic> parsed;
+      try {
+        parsed =
+            jsonDecode(_normalizeJsonPayload(content)) as Map<String, dynamic>;
+      } on FormatException {
+        final recovered = _extractJsonObject(content);
+        if (recovered == null) rethrow;
+        parsed = recovered;
+      }
+      await trace.complete();
+      return parsed;
+    } catch (error) {
+      await trace.fail(error);
+      rethrow;
+    }
+  }
+
+  static String _summaryFromJson(Map<String, dynamic> parsed) {
+    final summary = (parsed['summary'] ?? '').toString().trim();
+    if (summary.isEmpty) {
+      throw StateError('DeepSeek summary result missing summary field');
+    }
+    return summary;
   }
 
   static void deleteSummary(String entryId) {

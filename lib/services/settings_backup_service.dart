@@ -10,6 +10,7 @@ import 'article_relation_worker.dart';
 import 'feed_readability_settings_service.dart';
 import 'feed_silent_settings_service.dart';
 import 'feed_translation_settings_service.dart';
+import 'llm_config.dart';
 import 'summary_service.dart';
 import 'translation_service.dart';
 
@@ -276,6 +277,14 @@ abstract final class SettingsBackupService {
         return value;
       }
       throw FormatException('$key 必须是 system、light 或 dark');
+    }
+
+    if (LlmConfig.isVisionModelSettingKey(key)) {
+      if (value is! String) throw FormatException('$key 必须是字符串');
+      if (!LlmConfig.isSupportedVisionModel(value)) {
+        throw FormatException('$key 包含不支持的视觉模型：$value');
+      }
+      return value;
     }
 
     if (_stringKeys.contains(key) ||

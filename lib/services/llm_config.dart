@@ -4,6 +4,12 @@ import '../utils/storage.dart';
 class LlmConfig {
   static const int minConcurrency = 1;
   static const int maxConcurrency = 1024;
+  static const List<String> supportedVisionModels = [
+    'deepseek-v4-flash-vision-exp',
+  ];
+  static const String defaultVisionModel = 'deepseek-v4-flash-vision-exp';
+  static const String summaryVisionModelKey = 'llm_summary_vision_model';
+  static const String filterVisionModelKey = 'llm_filter_vision_model';
 
   final String model;
   final bool thinking;
@@ -103,6 +109,22 @@ class LlmConfig {
   static Future<void> resetTranslate() => _clear(_translatePrefix);
   static Future<void> resetSummary() => _clear(_summaryPrefix);
 
+  static String loadSummaryVisionModel() =>
+      _loadVisionModel(summaryVisionModelKey);
+  static String loadFilterVisionModel() =>
+      _loadVisionModel(filterVisionModelKey);
+
+  static Future<void> saveSummaryVisionModel(String model) =>
+      _saveVisionModel(summaryVisionModelKey, model);
+  static Future<void> saveFilterVisionModel(String model) =>
+      _saveVisionModel(filterVisionModelKey, model);
+
+  static bool isVisionModelSettingKey(String key) =>
+      key == summaryVisionModelKey || key == filterVisionModelKey;
+
+  static bool isSupportedVisionModel(String model) =>
+      supportedVisionModels.contains(model);
+
   // ─── 构建 API 请求体 ───
 
   Map<String, dynamic> toRequestBody() {
@@ -159,6 +181,7 @@ class LlmConfig {
   static Future<void> _clear(String prefix) async {
     await GStorage.setting.deleteAll([
       '${prefix}model',
+      '${prefix}vision_model',
       '${prefix}thinking',
       '${prefix}reasoning_effort',
       '${prefix}temperature',
@@ -172,5 +195,19 @@ class LlmConfig {
       return value;
     }
     return fallback;
+  }
+
+  static String _loadVisionModel(String key) {
+    final stored = GStorage.setting.get(key);
+    return stored is String && isSupportedVisionModel(stored)
+        ? stored
+        : defaultVisionModel;
+  }
+
+  static Future<void> _saveVisionModel(String key, String model) async {
+    if (!isSupportedVisionModel(model)) {
+      throw ArgumentError.value(model, 'model', '不支持的视觉模型');
+    }
+    await GStorage.setting.put(key, model);
   }
 }

@@ -69,6 +69,41 @@ void main() {
       expect(payload.settings[StorageKeys.articleRelationEnabled], isTrue);
     });
 
+    test('keeps supported summary and filter vision models', () {
+      final payload = SettingsBackupService.parseJson('''
+{
+  "type": "fourier_settings",
+  "version": 1,
+  "settings": {
+    "llm_summary_vision_model": "deepseek-v4-flash-vision-exp",
+    "llm_filter_vision_model": "deepseek-v4-flash-vision-exp"
+  }
+}
+''');
+
+      expect(
+        payload.settings['llm_summary_vision_model'],
+        'deepseek-v4-flash-vision-exp',
+      );
+      expect(
+        payload.settings['llm_filter_vision_model'],
+        'deepseek-v4-flash-vision-exp',
+      );
+    });
+
+    test('rejects unsupported vision models', () {
+      expect(
+        () => SettingsBackupService.parseJson('''
+{
+  "type": "fourier_settings",
+  "version": 1,
+  "settings": {"llm_summary_vision_model": "unknown-vision-model"}
+}
+'''),
+        throwsFormatException,
+      );
+    });
+
     test('keeps an Auto Folo version 1 session token for migration', () {
       final payload = SettingsBackupService.parseJson('''
 {
