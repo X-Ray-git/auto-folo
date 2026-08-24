@@ -362,7 +362,7 @@ void main() {
     expect(fragment.text, contains('Newsletter 正文'));
   });
 
-  test('CoderBill compatibility removes Circle email chrome and styles', () {
+  test('Inbox compatibility preserves actions and strips email styles', () {
     const raw = '''
 <table id="user-content-bodyTable" role="presentation">
   <tr><td>
@@ -398,26 +398,32 @@ void main() {
 
     expect(fragment.text, contains('邮件正文'));
     expect(fragment.text, contains('View post'));
-    expect(fragment.text, isNot(contains('Get the Circle app')));
-    expect(fragment.text, isNot(contains('Change notification settings')));
-    expect(fragment.text, isNot(contains('Unsubscribe from all emails')));
-    final contentImage = fragment.querySelector('img');
+    expect(fragment.text, contains('Get the Circle app'));
+    expect(fragment.text, contains('Change notification settings'));
+    expect(fragment.text, contains('Unsubscribe from all emails'));
+    final contentImage = fragment.querySelector(
+      'img[src="https://example.com/content.png"]',
+    );
     expect(contentImage?.attributes['src'], 'https://example.com/content.png');
     expect(contentImage?.attributes['width'], '320');
     expect(contentImage?.attributes['height'], '180');
     expect(contentImage?.attributes.containsKey('style'), isFalse);
+    final badgeImage = fragment.querySelector(
+      'img[src*="cdn.mcauto-images-production.sendgrid.net"]',
+    );
+    expect(badgeImage, isNotNull);
+    expect(badgeImage?.attributes['width'], '140');
+    expect(badgeImage?.attributes['height'], '47');
     expect(fragment.querySelectorAll('table'), hasLength(1));
     expect(fragment.querySelector('table th')?.text, '名称');
     expect(normalized, isNot(contains('height: 38px')));
     expect(
-      fragment
-          .querySelector('a[data-fourier-email-action="primary"]')
-          ?.attributes['href'],
+      fragment.querySelector('a')?.attributes['href'],
       'https://email.notification.circle.so/c/post',
     );
   });
 
-  test('CoderBill rules require both source identity and Circle structure', () {
+  test('Inbox presentation reset follows category rather than mailbox ID', () {
     const circleTemplate = '''
 <table id="user-content-emailBody" role="presentation">
   <tr><td><a href="https://email.notification.circle.so/c/post"
@@ -434,11 +440,82 @@ void main() {
     final ordinaryCoderBill = ArticleContentUtils.normalizeHtml(
       unrelated,
       feedId: 'coderbill',
-      category: 'inbox',
+      category: 'feeds',
     );
 
-    expect(otherInbox, contains('height: 38px'));
+    expect(otherInbox, isNot(contains('height: 38px')));
     expect(ordinaryCoderBill, contains('height: 38px'));
+  });
+
+  test('Inbox compatibility reduces a VentureBeat-style CTA to a link', () {
+    const raw = '''
+<table role="presentation"><tr><td>
+  <div style="font-family: Arial; line-height: 1.2">
+    <p style="font-size: 14px; margin: 24px">邮件正文</p>
+    <a href="https://links.venturebeat.com/read"
+      style="background: #000; color: #fff; padding: 5px 20px; width: auto">
+      <span style="display: inline-block; line-height: 32px">Read More</span>
+    </a>
+  </div>
+</td></tr></table>
+''';
+
+    final normalized = ArticleContentUtils.normalizeHtml(
+      raw,
+      feedId: 'x-ray',
+      category: 'inbox',
+    );
+    final fragment = html_parser.parseFragment(normalized);
+    final link = fragment.querySelector('a');
+
+    expect(fragment.querySelector('table'), isNull);
+    expect(fragment.text, contains('邮件正文'));
+    expect(link?.text.trim(), 'Read More');
+    expect(link?.attributes['href'], 'https://links.venturebeat.com/read');
+    expect(link?.attributes.containsKey('style'), isFalse);
+    expect(
+      link?.querySelector('span')?.attributes.containsKey('style'),
+      isFalse,
+    );
+  });
+
+  test('Inbox compatibility keeps semantic data tables', () {
+    const raw = '''
+<table style="border-collapse: collapse">
+  <tr><th>名称</th><th>数值</th></tr>
+  <tr><td>命中率</td><td>90%</td></tr>
+</table>
+''';
+
+    final normalized = ArticleContentUtils.normalizeHtml(
+      raw,
+      category: 'inbox',
+    );
+    final table = html_parser.parseFragment(normalized).querySelector('table');
+
+    expect(table, isNotNull);
+    expect(table?.querySelectorAll('tr'), hasLength(2));
+    expect(table?.querySelectorAll('th'), hasLength(2));
+  });
+
+  test('Inbox compatibility preserves in-message anchors', () {
+    const raw = '''
+<p><a href="#details" style="color: red">查看详情</a></p>
+<h2 id="details" style="font-size: 28px">详情</h2>
+''';
+
+    final normalized = ArticleContentUtils.normalizeHtml(
+      raw,
+      category: 'inbox',
+    );
+    final fragment = html_parser.parseFragment(normalized);
+
+    expect(fragment.querySelector('a')?.attributes['href'], '#details');
+    expect(fragment.querySelector('h2')?.attributes['id'], 'details');
+    expect(
+      fragment.querySelector('h2')?.attributes.containsKey('style'),
+      false,
+    );
   });
 
   test('normalizeHtml flattens irregular non-semantic table layouts', () {

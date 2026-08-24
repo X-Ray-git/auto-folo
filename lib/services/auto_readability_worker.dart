@@ -1,4 +1,5 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:html/parser.dart' as html_parser;
 
@@ -108,10 +109,11 @@ abstract final class AutoReadabilityWorker {
 
   static Future<void> _processArticle(ArticleModel article) async {
     final accountRevision = AccountSessionGuard.revision;
-    ArticleModel processedArticle = article;
-    var rawContent = article.content ?? '';
+    ArticleModel processedArticle =
+        LocalArticleDbService.preferPersistedContent(article);
+    var rawContent = processedArticle.content ?? '';
 
-    if (article.category == 'inbox' && rawContent.isEmpty) {
+    if (processedArticle.category == 'inbox' && rawContent.isEmpty) {
       final inboxFetchedKey = StorageKeys.inboxDetailFetched(article.entryId);
       final hasInboxFetched = GStorage.setting.get(inboxFetchedKey) == true;
       if (!hasInboxFetched) {
@@ -122,7 +124,7 @@ abstract final class AutoReadabilityWorker {
             detailResult.response.isNotEmpty &&
             AccountSessionGuard.isCurrent(accountRevision)) {
           rawContent = detailResult.response;
-          processedArticle = article.copyWith(content: rawContent);
+          processedArticle = processedArticle.copyWith(content: rawContent);
           LocalArticleDbService.upsertOne(processedArticle);
           ArticleContentUtils.clearCacheForEntry(article.entryId);
           GStorage.setting.put(inboxFetchedKey, true);

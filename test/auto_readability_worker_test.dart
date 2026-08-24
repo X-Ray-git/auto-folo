@@ -100,6 +100,33 @@ void main() {
         isA<Map>(),
       );
     });
+
+    test('刷新短快照不会覆盖已持久化全文的下游 AI 输入', () async {
+      final fullArticle = _article(7, content: _longHtml);
+      final staleExcerpt = _article(7, content: '<p>一句话摘要</p>');
+      LocalArticleDbService.upsertOne(fullArticle);
+      await GStorage.setting.put('readability_fetched_entry-7', true);
+
+      final filtered = <String>[];
+      final translated = <String>[];
+      final summarized = <String>[];
+      AutoFilterWorker.debugRunOverride = (article) async {
+        filtered.add(article.content ?? '');
+      };
+      AutoTranslationWorker.debugRunOverride = (article) async {
+        translated.add(article.content ?? '');
+      };
+      AutoSummaryWorker.debugRunOverride = (article) async {
+        summarized.add(article.content ?? '');
+      };
+
+      AutoReadabilityWorker.enqueueOne(staleExcerpt);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      expect(filtered, [_longHtml]);
+      expect(translated, [_longHtml]);
+      expect(summarized, [_longHtml]);
+    });
   });
 
   group('AutoReadabilityWorker 已读语义', () {

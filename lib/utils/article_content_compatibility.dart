@@ -1,6 +1,6 @@
 import 'package:html/dom.dart' as dom;
 
-import 'coderbill_email_compatibility.dart';
+import 'inbox_email_compatibility.dart';
 
 /// Narrow compatibility fixes for source HTML that depends on site CSS which
 /// is not available in the article reader.
@@ -15,12 +15,8 @@ abstract final class ArticleContentCompatibility {
     String? feedId,
     String? category,
   }) {
-    if (CoderBillEmailCompatibility.appliesTo(
-      fragment,
-      feedId: feedId,
-      category: category,
-    )) {
-      CoderBillEmailCompatibility.apply(fragment);
+    if (InboxEmailCompatibility.appliesTo(category: category)) {
+      InboxEmailCompatibility.apply(fragment);
     }
     _normalizeHuggingFaceAuthorBylines(fragment);
     _removeHuggingFaceAvatars(fragment);

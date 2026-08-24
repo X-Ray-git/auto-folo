@@ -144,7 +144,7 @@
   播放和视觉验证。
 - 原文 Markdown 转换已从 `article_page.dart` 提取到 `ArticleMarkdownExportService`；单篇复制和批量构建共享标题去重、元数据、正文结构和转义规则。页面层只处理当前内容、剪贴板与反馈，后续静默订阅源批量功能不得再维护页面内 exporter。
 - 单篇 Markdown 转换现与批量导出一样运行在 isolate，并有连续触发保护；畸形嵌套列表不再递归回同一 HTML。真实阿里技术 568KB 级缓存样本已验证能完成导出，不再阻塞 UI 或栈溢出。
-- 来源专属正文兼容已集中到 `ArticleContentCompatibility`。Hugging Face Blog 的 `BlogAuthorsByline` 会转换为单个紧凑作者 chunk，以 `36px` 圆形头像、姓名和账号横向换行展示；站点装饰头像仅在头像域名/路径和明确头像语义同时成立时移除。CoderBill Inbox 使用独立的 Circle 邮件兼容层，只有 feed/category 与模板结构签名同时成立才移除邮件页脚、推广外壳和邮件布局样式，正文、链接、数据表、图片及其明确尺寸保持不变。原文、已保存译文、AI 输入、图片预取、长度估算和 Markdown 导出都传递相同来源上下文，规范化缓存也包含 URL/feed/category；历史文章不需要数据库迁移。
+- 来源专属正文兼容已集中到 `ArticleContentCompatibility`。Hugging Face Blog 的 `BlogAuthorsByline` 会转换为单个紧凑作者 chunk，以 `36px` 圆形头像、姓名和账号横向换行展示；站点装饰头像仅在头像域名/路径和明确头像语义同时成立时移除。所有 Inbox 邮件共用 `InboxEmailCompatibility`：保留正文、图片、数据表、邮件内锚点和全部有意义链接，只移除邮件客户端展示样式并把按钮退化为 Fourier 普通文本链接；跟踪像素、空链接和布局表继续由通用规范化清理。原文、已保存译文、AI 输入、图片预取、长度估算和 Markdown 导出都传递相同来源上下文，规范化缓存也包含 URL/feed/category；历史文章不需要数据库迁移。
 - 规范化现携带文章原文 URL：相对图片可按页面地址解析，正文、预取、图片查看器和 Markdown 使用一致的绝对地址；SVG 复用文章级磁盘缓存并由 `flutter_svg` 渲染。MarkTechPost 来源规则会移除失效的网页复制控件和确定泄漏的交互文档，代码块由阅读器提供统一轻量复制按钮。OpenAI News 缺少真实音频地址的问题仍不在本轮恢复。
 - Debug 与 Release 网络请求现在统一使用系统 HTTPS 证书信任链，不再通过 `badCertificateCallback` 无条件接受无效证书；自定义 `HttpClient` 的 `15s` idle timeout 保持不变。需要抓包时应安装并信任代理证书，而不是在应用内关闭校验。
 - Folo 接口边界已按上游 `@follow-app/client-sdk 0.3.95` 重新审计：认证 Dio 只允许访问 `https://api.folo.is`，公共文章抓取改用无认证客户端；订阅联合响应、创建响应、Inbox 分页、顶层 `read`、恢复未读 `isInbox` 与批量分类接口均按官方类型修正。用户凭据仍只有 Session Token；Client/Session ID 由应用内部生成，不进入配置备份。
@@ -160,6 +160,7 @@
 - macOS 从文章元数据点击来源进入订阅源后保留一层返回上下文；在目标列表详情为空时按 `Esc` 可恢复原 scope、文章、时间线/正文位置和摘要/译文显隐。目标源内先打开文章时，第一次 `Esc` 仍关闭详情；手动切换其他 scope 会使返回点失效。
 - macOS 正文链接 hover 的瞬时卡顿已修复并经用户验证。根因是所有 `HtmlChunkCard` 监听共享 `_hoveredUrl`，任意链接进入/离开都会让全篇 HTML 缓存失效并重新解析。当前取消动态下划线和 chunk 监听，只保留主题色、手型光标、点击及底部 URL 预览。
 - 详情页补抓普通全文或 Inbox 正文成功后，现已和后台 Readability 共用 `AutoAiQueueCoordinator.onArticleContentAvailable()`：只给最新状态仍为未读的文章排摘要，并按订阅源开关排翻译。打开页面期间后台译文完成后，`ArticleController` 会解析并刷新当前译文，不再要求切走后重开。已读取消策略、已开始请求和手动 AI 操作保持原语义。
+- 全文 Worker 会在执行时重新比较队列快照和本地持久化正文；若刷新携带的仍是 RSS 短摘要，而本地已经保存明显更长的 Readability 全文，过滤、摘要和翻译统一使用本地全文。历史错误短译文不自动删除，需用户明确删除后重新生成。
 - macOS 阅读快捷键已扩展：`B` 打开原文，`Shift+B` 确保已读并打开（垃圾拦截为移除并打开），`Cmd+1/2/0` 分别导航到全部文章、垃圾拦截和静默订阅源。无选择时 `Right/Left` 分别选择当前列表首篇/末篇；应用级快捷键注册器先于默认焦点移动处理，`Esc` 后使用空详情中立焦点节点，避免侧边栏“全部文章”残留灰色焦点高亮。设置页说明和回归测试已同步。
 - macOS 原生菜单已从 Flutter 模板收敛为 `Fourier / 编辑 / 显示 / 文章 / 窗口 / 帮助`。业务 Undo/Redo 使用 50 项双栈，`Cmd+Z`/`Shift+Cmd+Z` 可连续处理标为已读、垃圾拦截保留/移除以及静默文章整批标为已读；输入框保留文本 Undo/Redo。业务栈在整个应用进程中保持一致，不因页面或 scope 切换而清空，也不跨重启持久化。单篇菜单显示动作和截断标题，批量菜单显示动作和篇数。`Cmd+W` 已恢复为与红色按钮一致的隐藏窗口行为。
 - macOS 静默订阅源汇总视图新增批量导出模式：默认空选，卡片角标独立勾选且卡片本体仍可阅读；支持复制/保存 Markdown 及各自的“并标为已读”组合动作。导出入口与排序控件共用锚定式液态玻璃 morph 展开效果，命令项不显示持久选中态；`Esc` 与右上角关闭按钮共用退出并清空勾选的路径。单篇和批量 Markdown 统一由 `ArticleMarkdownExportService` 生成，不加批次总标题，按列表顺序以 `---` 分隔；正文未缓存时只输出已有元数据和明确提示，不触发网络抓取。组合动作导出成功后才提交读状态；远端分块与补偿结果逐篇追踪，本地和 Undo/Redo 历史只反映最终确认改变的子集。用户已确认 morph 展开与 `Esc` 退出行为符合预期。
