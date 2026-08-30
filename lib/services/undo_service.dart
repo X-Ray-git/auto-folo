@@ -113,6 +113,9 @@ typedef UndoRedoTargetPredicate = bool Function();
 typedef RedoPreparation = bool? Function(UndoAction action);
 
 class UndoService {
+  static const Duration _visualTransitionSyncDelay = Duration(
+    milliseconds: 500,
+  );
   static const int historyLimit = 50;
 
   static final _history = BoundedHistory<UndoAction>(limit: historyLimit);
@@ -120,7 +123,9 @@ class UndoService {
   static int _actionSequence = 0;
   static int _restoreSequence = 0;
   static Future<void> _operationTail = Future<void>.value();
+  static bool _historyNotificationPending = false;
 
+  static final preparingRestoreAction = Rxn<UndoRestoreEvent>();
   static final restoredAction = Rxn<UndoRestoreEvent>();
   static final historyRevision = ValueNotifier<int>(0);
 
@@ -149,8 +154,11 @@ class UndoService {
     _redoTargets.remove(owner);
   }
 
-  static void recordRead(ArticleModel article) {
-    _record(UndoActionType.read, article);
+  static void recordRead(
+    ArticleModel article, {
+    bool deferNotification = false,
+  }) {
+    _record(UndoActionType.read, article, notify: !deferNotification);
   }
 
   static void recordBatchRead(List<ArticleModel> articles) {
@@ -198,11 +206,19 @@ class UndoService {
     _notifyHistoryChanged();
   }
 
-  static void _record(UndoActionType type, ArticleModel article) {
+  static void _record(
+    UndoActionType type,
+    ArticleModel article, {
+    bool notify = true,
+  }) {
     _history.push(
       UndoAction(sequence: ++_actionSequence, type: type, article: article),
     );
-    _notifyHistoryChanged();
+    if (notify) {
+      _notifyHistoryChanged();
+    } else {
+      _historyNotificationPending = true;
+    }
   }
 
   static void clear() {
@@ -220,11 +236,29 @@ class UndoService {
   }
 
   static void _notifyHistoryChanged() {
+    _historyNotificationPending = false;
     historyRevision.value++;
+  }
+
+  /// Publishes a history entry that was recorded during a visual transition.
+  ///
+  /// The entry is immediately available to undo/redo; only the native macOS
+  /// menu rebuild is deferred so it cannot consume the card exit animation.
+  static void flushDeferredHistoryNotification() {
+    if (!_historyNotificationPending) return;
+    _notifyHistoryChanged();
   }
 
   static void _notifyRestored(UndoAction action) {
     restoredAction.value = UndoRestoreEvent(
+      sequence: ++_restoreSequence,
+      type: action.type,
+      article: action.article,
+    );
+  }
+
+  static void _notifyPreparingRestore(UndoAction action) {
+    preparingRestoreAction.value = UndoRestoreEvent(
       sequence: ++_restoreSequence,
       type: action.type,
       article: action.article,
@@ -238,7 +272,9 @@ class UndoService {
     bool queueSync = true,
   }) {
     if (article.entryId.trim().isEmpty) return;
-    if (recordHistory) recordRead(article);
+    if (recordHistory) {
+      recordRead(article, deferNotification: deferTimelineVisualUpdate);
+    }
 
     if (Get.isRegistered<TimelineController>()) {
       Get.find<TimelineController>().markAsReadLocal(
@@ -255,7 +291,8 @@ class UndoService {
       );
       ArticleStateNotifier.tick(article.entryId);
     }
-    if (Get.isRegistered<ArticleController>(tag: article.entryId)) {
+    if (!deferTimelineVisualUpdate &&
+        Get.isRegistered<ArticleController>(tag: article.entryId)) {
       Get.find<ArticleController>(tag: article.entryId).isRead.value = true;
     }
 
@@ -264,7 +301,15 @@ class UndoService {
         article.entryId,
         isInbox: article.category == 'inbox',
       );
-      unawaited(ReadSyncService.syncPendingReads());
+      if (deferTimelineVisualUpdate) {
+        unawaited(
+          Future<void>.delayed(_visualTransitionSyncDelay).then((_) {
+            return ReadSyncService.syncPendingReads();
+          }),
+        );
+      } else {
+        unawaited(ReadSyncService.syncPendingReads());
+      }
     }
   }
 
@@ -381,15 +426,22 @@ class UndoService {
     if (article.isRead || article.entryId.trim().isEmpty) return;
     if (!deferTimelineVisualUpdate &&
         Get.isRegistered<ArticleController>(tag: article.entryId)) {
-      await Get.find<ArticleController>(
-        tag: article.entryId,
-      ).markAsRead(showSuccess: showSuccess);
+      await Get.find<ArticleController>(tag: article.entryId)
+          .markAsRead(showSuccess: showSuccess);
+      return;
+    }
+
+    if (deferTimelineVisualUpdate) {
+      // Keep network setup and response processing outside the card exit
+      // animation. The durable pending queue preserves the operation if the
+      // app closes before the delayed sync starts.
+      applyReadLocally(article, deferTimelineVisualUpdate: true);
       return;
     }
 
     applyReadLocally(
       article,
-      deferTimelineVisualUpdate: deferTimelineVisualUpdate,
+      deferTimelineVisualUpdate: false,
       queueSync: false,
     );
 
@@ -556,6 +608,7 @@ class UndoService {
     }
 
     final article = action.article;
+    _notifyPreparingRestore(action);
 
     if (action.type == UndoActionType.filterKeep) {
       // 整条替换快照：merge 的 ?? 会保留动作前的 userAction 标记

@@ -23,6 +23,23 @@ void main() {
     expect(UndoService.nextUndoAction?.description, '将 2 篇静默文章标为已读');
   });
 
+  test(
+    'deferred read history is immediately undoable but not yet published',
+    () {
+      final before = UndoService.historyRevision.value;
+
+      UndoService.recordRead(article('deferred'), deferNotification: true);
+
+      expect(UndoService.canUndo, isTrue);
+      expect(UndoService.nextUndoAction?.article.entryId, 'deferred');
+      expect(UndoService.historyRevision.value, before);
+
+      UndoService.flushDeferredHistoryNotification();
+
+      expect(UndoService.historyRevision.value, before + 1);
+    },
+  );
+
   test('partial batch undo splits restored and remaining history', () {
     final history = BoundedHistory<UndoAction>(limit: 50);
     final original = UndoAction.batchRead(

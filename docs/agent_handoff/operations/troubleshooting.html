@@ -83,6 +83,21 @@ macOS 文章滚动回归：
 - 它不会限制手指仍在触控板上时每一帧的原始滚动 delta。
 - 原始事件拦截可行但侵入性强；除非用户明确接受风险，否则避免采用。
 
+macOS 主时间线 `M`、双击或 `Command-Z` 动画异常：
+
+- 使用 Debug 显式开启默认关闭的探针：
+
+```bash
+flutter run -d macos --no-pub \
+  --dart-define=FOURIER_ANIMATION_PROBE=true \
+  2>&1 | tee /private/tmp/fourier-timeline-animation.log
+```
+
+- 退场应看到 `local-exit.start`、多个 `local-exit.animation-tick` 和 `local-exit.completed`；恢复应依次看到 `restore.preparing`、`restore.completed`、`local-entrance.queued`、`local-entrance.start`、多个 tick、`local-entrance.completed`、`restore.selection-restored`。
+- 正常 `180ms` 动画在高刷新率屏幕会跨多个系统帧。只有 start/completed、没有中间 raw 值，通常表示行提前被列表 reconciliation 销毁；有完整 raw 值但视觉卡顿，应结合 frame timing 判断是否为详情构建、列表清理或其他同步工作占用 UI isolate。
+- 同一 entry id 可能快速开始新 session；探针代次用于忽略旧 session 的 2 秒超时。不要仅根据日志中同一短 id 的旧 timeout 判断新动画失败。
+- 探针仅在 macOS Debug 且显式传入 dart-define 时注册帧耗时回调和动画监听器。普通 Debug 与 Release 不启用，不应把探针本身作为常驻性能成本。
+
 Release notes 出现字面量 `\n`：
 
 - 必要时修正 release note body。

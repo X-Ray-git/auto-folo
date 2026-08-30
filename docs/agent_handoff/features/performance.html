@@ -54,7 +54,7 @@
 
 <svg viewBox="0 0 900 400" role="img" aria-labelledby="perf-title perf-desc">
 <title id="perf-title">时间线列表动画时序</title>
-<desc id="perf-desc">单篇已读走增量删除与 180ms 退场动画，跨页通知延后到 onRemoveEnd；批量变化走零时长 batchUpdateVersion，不做大规模 diff 动画。</desc>
+<desc id="perf-desc">macOS 主时间线由稳定懒列表承载行，单篇已读只在行级过渡层播放 180ms 动画；业务列表清理、跨页通知和详情切换均在视觉过渡后执行。</desc>
 <defs>
   <marker id="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M 0 0 L 10 5 L 0 10 z" class="dg-arrow-head"/>
@@ -70,12 +70,12 @@
   <text x="145" y="76" class="dg-sub">本地持久化立即执行</text>
 
   <rect x="320" y="30" width="250" height="72" rx="12" class="dg-node"/>
-  <text x="445" y="56" class="dg-label">可见列表增量删除</text>
-  <text x="445" y="76" class="dg-sub">约 164–671 µs · 无列表 reset</text>
+  <text x="445" y="56" class="dg-label">行级 CardHost 先退场</text>
+  <text x="445" y="76" class="dg-sub">列表仍保留真实行 · 唯一过渡层</text>
 
   <rect x="620" y="30" width="260" height="72" rx="12" class="dg-node dg-warn"/>
   <text x="750" y="56" class="dg-label">180ms 退场动画</text>
-  <text x="750" y="76" class="dg-sub">onRemoveEnd 后切换下一篇</text>
+  <text x="750" y="76" class="dg-sub">结束后才清理列表与切换详情</text>
 </g>
 <path class="dg-edge dg-flow" d="M 270 66 H 320"/>
 <path class="dg-edge dg-flow" d="M 570 66 H 620"/>
@@ -99,8 +99,8 @@
 <g class="dg-row">
   <rect x="20" y="300" width="420" height="80" rx="12" class="dg-node dg-fallback"/>
   <text x="230" y="326" class="dg-label">批量变化（模式/排序/同步/回填）</text>
-  <text x="230" y="346" class="dg-sub">timelineListResetVersion → batchUpdateVersion</text>
-  <text x="230" y="364" class="dg-sub">同一列表实例零时长协调 · 保留滚动位置</text>
+  <text x="230" y="346" class="dg-sub">普通 ListView.builder 直接协调稳定 key</text>
+  <text x="230" y="364" class="dg-sub">不为大规模 diff 播放动画 · 保留滚动位置</text>
 
   <rect x="470" y="300" width="410" height="80" rx="12" class="dg-node dg-note"/>
   <text x="675" y="326" class="dg-label">诊断埋点（默认关闭）</text>
@@ -145,9 +145,9 @@
 - 文章正文目前保留 `Column`。Sliver 虚拟化可能提高原始性能，但会影响选择、目录锚点、图片生命周期、滚动定位和现有阅读行为。
 - 不要给每个小型重复元素都应用真实玻璃。重复时间线标签、设置行、任务行优先使用轻量描边或静态样式。
 - macOS 中间时间线 header 不使用完整玻璃背景，也不显示底部分隔线。
-- 未读/全部模式切换、订阅源/分类筛选、排序、同步回填、加载更多等批量时间线变化不应为几千个列表项逐个播放动画。`timelineListResetVersion` 作为 `ImplicitlyAnimatedList.batchUpdateVersion`，在现有列表实例中执行零时长协调；普通单篇标已读/恢复未读动画保留。
-- 从具体订阅源回到完整时间线曾出现明显卡顿。原因是侧边栏连续修改多个响应式筛选字段，触发多次 `_applyFilter()`，且 `ImplicitlyAnimatedList` 试图把“小列表 -> 大列表”做大量插入动画。当前通过 `setTimelineScope()` 合并状态更新，并用 batch version 禁用这类批量 diff 动画，同时保留 `ScrollController`，避免无关更新回到顶部。
-- macOS 主时间线单篇标为已读也不能同步走完整 `_applyFilter()` 和全局 `ArticleStateNotifier` 扇出。约 `4799` 篇本地文章时，这条旧路径会在动画首帧产生约 73–90ms UI isolate 工作，导致 180ms 退场动画跳帧。当前先增量删除可见项，持久化仍立即完成；全量内存模型、角标/计数和跨页面通知在真实移除结束后维护。日志测得增量更新约 164–671 微秒。
+- 未读/全部模式切换、订阅源/分类筛选、排序、同步回填、加载更多等批量时间线变化不应为几千个列表项逐个播放动画。macOS 主时间线由稳定 `ListView.builder` 直接协调 keyed rows；保留通用动画列表的其他页面继续使用 `timelineListResetVersion` / `batchUpdateVersion`，不要混淆两条路径。
+- 从具体订阅源回到完整时间线曾出现明显卡顿。侧边栏仍通过 `setTimelineScope()` 合并多个响应式筛选字段，避免重复 `_applyFilter()`；普通列表不再尝试把“小列表 -> 大列表”渲染为大量 diff 动画。
+- macOS 主时间线单篇标为已读不能同步走完整 `_applyFilter()`、原生菜单重建、网络请求和全局 `ArticleStateNotifier` 扇出。行级过渡先完成，列表清理和详情切换随后执行；网络同步延后 `500ms`，但耐久队列立即写入。恢复未读先渲染零尺寸首帧，下一帧再启动控制器。
 - macOS 正文链接 hover 不再通过共享 `_hoveredUrl` 让所有 `HtmlChunkCard` 重建。动态下划线已取消，手型光标、链接点击和底部 URL 预览保留；用户验证滚动经过链接时的瞬时卡顿消失。
 - macOS 订阅源侧边栏不使用以整个 view/category 大组为 item 的 `ListView.builder`。这类少量但高度差异巨大的懒加载 item 会让 Flutter 在滚动中持续修正总滚动范围，使 scrollbar 拇指长度和位置跳变。当前滚动区一次布局分类标题和已展开的订阅源行，以稳定 `maxScrollExtent`；折叠分类的订阅源行仍不构建。若未来同时展开大量分类后出现真实性能问题，应先测量，再考虑把每个可见行扁平化为稳定的小粒度 sliver，不能直接恢复粗粒度列表。
 
@@ -167,8 +167,9 @@
 - 缓存解析后的 chunk 元数据和阅读高度估算。
 - 降低 debug 日志量。
 - 批量模式变化避免大型 AnimatedList diff。
-- 批量筛选/排序/同步变化递增 `TimelineController.timelineListResetVersion`，让同一列表实例零时长协调而不是播放 diff 动画；不要再把 version 塞入 key 触发整列重建。
-- 单篇移除动画期间只增量修改当前可见列表；把完整过滤、应用角标和跨页面通知延后到退场完成后。
+- macOS 主时间线批量筛选/排序/同步变化由稳定 lazy list 和 item key 直接协调，不播放 diff 动画；其他使用通用动画列表的路径仍通过 `timelineListResetVersion` 做零时长批量同步。
+- 单篇移除时不要先从列表删除行。先在 `_TimelineArticleCardHost` 播放完整退场，动画结束后再清理已经不可见的行，并延后完整过滤、应用角标、菜单通知和跨页面通知。
+- 恢复未读时先发准备事件并提交零尺寸首帧，下一帧再启动进场；详情选择等待进场完成，避免恢复文章构建与动画争抢首帧。
 - 重复小控件使用轻量静态样式。
 - macOS 正文图片预取只写磁盘缓存，不批量预解码到 Flutter 内存图片缓存。HTML 图片 URL 规划在后台 isolate 完成；缓存删除串行执行并在文件之间让出事件循环，避免刷新或五分钟回收形成集中 I/O 峰值。
 

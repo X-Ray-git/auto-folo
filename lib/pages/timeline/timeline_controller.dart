@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:intl/intl.dart';
 import 'package:get/get.dart';
+
 import '../../common/widgets/app_badger.dart';
 
 import '../../common/constants/constants.dart';
@@ -34,6 +35,7 @@ enum TimelineSortMode { newest, longest, shortest }
 
 /// 时间线控制器 — 本地文章库（未读/全部/已读）
 class TimelineController extends GetxController {
+  static const Duration deferredCardExitDuration = Duration(milliseconds: 180);
   static const bool _animationProbeRequested = bool.fromEnvironment(
     'FOURIER_ANIMATION_PROBE',
   );
@@ -376,9 +378,8 @@ class TimelineController extends GetxController {
             (min, value) => min == null || value < min ? value : min,
           );
       if (earliest != null && earliest > 0) {
-        final timeText = DateFormat(
-          'MM-dd HH:mm',
-        ).format(DateTime.fromMillisecondsSinceEpoch(earliest).toLocal());
+        final timeText = DateFormat('MM-dd HH:mm')
+            .format(DateTime.fromMillisecondsSinceEpoch(earliest).toLocal());
         AppFeedback.success('已同步已读', '最早文章：$timeText');
       } else {
         AppFeedback.success('已同步已读', '最近$_readSyncWindowDays天已同步完成');
@@ -458,7 +459,9 @@ class TimelineController extends GetxController {
       final token = Object();
       _deferredReadVisualUpdates[entryId] = token;
       unawaited(
-        SchedulerBinding.instance.endOfFrame.then((_) {
+        Future<void>.delayed(deferredCardExitDuration).then((_) async {
+          if (!identical(_deferredReadVisualUpdates[entryId], token)) return;
+          await SchedulerBinding.instance.endOfFrame;
           if (!identical(_deferredReadVisualUpdates[entryId], token)) return;
           _deferredReadVisualUpdates.remove(entryId);
           updateVisualState();
@@ -759,7 +762,7 @@ class TimelineController extends GetxController {
     final shortId = entryId.length <= 8
         ? entryId
         : entryId.substring(entryId.length - 8);
-    debugPrintSynchronously(
+    debugPrint(
       '[TimelineReadStateProbe] id=$shortId event=$event '
       'pending=${ReadSyncService.pendingReadItems.any((item) => item.entryId == entryId)} '
       'override=${GStorage.readStatus.get(entryId)}',

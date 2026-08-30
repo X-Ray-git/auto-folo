@@ -381,7 +381,7 @@
 
 决策：垃圾拦截用 pending action 屏蔽本次状态广播和 reload 对可视列表的提前修改，持久化完成后在帧边界只提交一次删除。主时间线双击允许 `markAsReadLocal` 先持久化，再在下一帧边界更新内存列表；会删除卡片时，浏览器在真实 `onRemoveEnd` 后再跨一帧打开。其他已读调用方保持默认同步视觉更新。
 
-后果：不改变既有 180ms 动画曲线，也不把平台特殊时序扩散到 Android。用户验证 `M/K` 和双击恢复稳定。诊断埋点保留为 Debug 显式开关 `AUTO_FOLO_ANIMATION_PROBE`，普通运行和 Release 没有监听/日志成本。
+后果：不改变既有 180ms 动画曲线，也不把平台特殊时序扩散到 Android。用户验证 `M/K` 和双击一度恢复稳定；后续主时间线再次出现 reconciliation 吞动画的问题，由下方“主时间线改为稳定懒列表与行级唯一过渡层”决策继续收敛。诊断埋点保留为 Debug 显式开关 `FOURIER_ANIMATION_PROBE`，普通运行和 Release 没有监听/日志成本。
 
 <details class="dg-callout" open>
 <summary>不要回退</summary>
@@ -548,6 +548,14 @@
 决策：未读模式下会删除卡片时，本地数据库和网络同步语义保持立即执行，但动画首帧只从当前可见 `articles` 增量删除对应项，不更新离场中的选中文章。完整内存模型、角标/计数与跨页面 `ArticleStateNotifier` 广播推迟到真实 `onRemoveEnd` 后再跨一个 `endOfFrame` 执行；控制器保留 1 秒 fallback，避免异常生命周期丢失通知。`Command-Z` 会取消尚未执行的可视更新和通知 token。移除冗余的全局状态订阅、`allArticles.refresh()` 和单篇 `loadingState` 重写，外部浏览器继续等待真实移除结束。
 
 后果：最终日志中，约 `4799` 篇本地文章环境下的增量更新降到 164–671 微秒，两次 `M` 和四次双击均完整经过 bucket `4→3→2→1→0`，移除期间没有列表 reset；用户视觉确认正常。不要为了追求同步一致性把全量过滤、应用角标或跨页面广播重新放回退场动画首帧。默认参数仍保留其他平台和非移除调用方原行为。
+
+## macOS 主时间线改为稳定懒列表与行级唯一过渡层
+
+背景：上述增量更新方案在后续使用中再次出现 `M`、双击和 `Command-Z` 动画缺失或掉帧。探针确认动画控制器本身会运行，但控制器列表变更触发的 `AnimatedList` reconciliation 会产生约 `125–155ms` UI 构建停顿，并可能提前销毁活动行。延后原生菜单通知、网络同步和跨页通知只能减少干扰，不能消除列表 reconciliation。把通用组件实验性改成 `SliverAnimatedList + findChildIndexCallback` 也没有改善，已完整回退，避免扩大影响面。
+
+决策：仅 macOS 主时间线改用稳定的 `ListView.builder`、entry id key 与 `findChildIndexCallback`。列表自身不做插入/移除动画；每一行由 `_TimelineArticleCardHost` 独占唯一的 `SizeTransition + FadeTransition`。标为已读时先在仍然存在的行上播放 `180ms easeInCubic`，控制器可见列表变更延后同样时长，行不可见后再完成普通列表清理、协调器后继选择、跨页通知、菜单刷新和外部浏览器。恢复未读时，`UndoService.preparingRestoreAction` 在插入前通知页面，首帧以零尺寸/透明度布局，下一 post-frame 启动 `180ms easeOutCubic`；选择与详情等进场完成后才恢复。业务撤销项和耐久 read-sync 队列立即写入，只有原生菜单通知和网络发送为保护动画而延后。
+
+后果：用户最终确认 `M` 退场和 `Command-Z` 进场均恢复完整时长；日志显示进场约 `185–193ms`，且选择只在 `local-entrance.completed` 后恢复。普通列表清理仍可能在不可见行移除后产生约 `125–155ms` 构建停顿，恢复首帧/详情切换也可能有约 `15–31ms` 慢帧，但不再吞掉视觉动画。该结构不能未经验证推广到垃圾拦截、最近阅读、Android 或通用 `ImplicitlyAnimatedList`；这些路径保留既有实现。
 
 ## macOS 订阅源分类行使用单一交互反馈面
 

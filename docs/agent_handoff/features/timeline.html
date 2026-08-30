@@ -114,11 +114,11 @@ macOS 分栏选择与移除协调：
 
 性能决策：
 
-- macOS 时间线列表使用 `ImplicitlyAnimatedList`，但只应把动画用于普通标记已读/恢复未读带来的局部插入/移除。
-- 批量变化必须无动画同步，不应做大规模 diff 动画。批量变化包括：切换未读/全部等模式、切换订阅源/分类/静默范围、切换排序、本地库批量回填、同步/加载更多，以及单篇元数据确实改变列表成员或排序的情况。
-- `TimelineController.timelineListResetVersion` 是这个边界的核心：批量变化递增它，并作为 `ImplicitlyAnimatedList.batchUpdateVersion` 传入。组件在同一个 `AnimatedList` 和 `ScrollController` 上以零时长协调项目，不再把 version 放进 key 重建整列，因此不会仅因刷新或元数据通知把滚动位置重置为顶部。
-- 列表外层 key 只包含 selected mode 和 scope key；模式/范围切换仍可建立新的列表语义。`markAsReadLocal` / `markAsUnreadLocal` 不递增 batch version，所以普通读状态局部动画保留。
-- 单篇数据库通知先比较过滤后的 entry id 顺序。标题、正文、摘要等非结构元数据更新不触发 batch version；只有列表成员或顺序确实改变时才做零时长同步。不要恢复成“任何非已读字段变化都重建整列”的旧判断。
+- macOS 主时间线使用稳定的懒加载 `ListView.builder`，通过 entry id key 和 `findChildIndexCallback` 保持行身份；普通列表本身不承担插入/移除动画。`_TimelineArticleCardHost` 是该页面唯一的尺寸与透明度过渡层。
+- `M` 或双击标为已读时，先让仍在列表中的真实卡片完成 `180ms` 退场，再从控制器可见列表移除已经不可见的行。`Command-Z` 恢复时先登记即将插入的 entry id，首帧以零尺寸/零透明度布局，下一帧才启动 `180ms` 进场。
+- 批量变化不播放逐项 diff 动画。它们包括切换未读/全部、切换订阅源/分类/静默范围、切换排序、本地库批量回填、同步/加载更多，以及会改变大量成员或顺序的元数据更新。
+- `TimelineController.timelineListResetVersion` 和 `ImplicitlyAnimatedList.batchUpdateVersion` 仍服务于保留该通用组件的其他路径；不要重新用它们承载 macOS 主时间线单项动画，也不要把这次页面专用结构扩散到垃圾拦截、最近阅读或 Android。
+- 列表外层 key 只包含 selected mode 和 scope key；模式/范围切换建立新的列表语义。单篇数据库通知仍应先比较过滤后的 entry id 顺序，标题、正文、摘要等非结构元数据更新不能重建整列。
 - `TimelineController.setTimelineScope()` 负责批量更新 `isSilentSelected`、`selectedFeedId`、`selectedCategory`，避免侧边栏一次点击触发多次 `_applyFilter()`。
 - 不要重新在侧边栏或文章页里直接连续设置 `selectedFeedId.value` / `selectedCategory.value` / `isSilentSelected.value`；这会恢复“多次过滤 + 多次重建”的卡顿。
 - 普通标记已读时，单项移除动画仍保留。
@@ -158,16 +158,14 @@ macOS 分栏选择与移除协调：
 
 标为已读的动画时序：
 
-- 主时间线在未读模式下处理 `M` 或双击时，先登记后继文章，但保持当前详情；卡片真实完成退出后再切换详情并把后继卡片留在可见区域。非移除模式继续使用普通相对选择。
-- 本地数据库写入是同步重工作；不能在 `addPostFrameCallback` 中同时做持久化和列表变更。post-frame callback 仍属于当前帧，实测会让 180ms 动画只剩约 30–55ms 可见时间。
-- `UndoService.markAsRead(... deferTimelineVisualUpdate: true)` 供 macOS 双击路径使用；主时间线 `M` 在未读模式下也直接要求 `TimelineController.markAsReadLocal(... deferVisualUpdateToFrameBoundary: true, deferArticleStateNotification: true)`。控制器先持久化，再等待新的 `endOfFrame` 才更新当前可见列表；其他调用方默认行为不变。
-- 单篇已读不能在动画首帧调用完整 `_applyFilter()`。日志曾确认本地模型约有 `4799` 篇文章，全量扫描、应用角标/计数并通知所有订阅者会占用约 73–90ms。当前移除路径只从可见 `articles` 中增量删除对应项，离场文章的 `allArticles`、角标、计数和其他页面状态在动画完成后统一维护。
-- `ArticleStateNotifier.tick()` 会同步扇出到最近阅读全库读取/排序、订阅源未读计数、订阅源详情和垃圾拦截等页面。会移除卡片时，跨页面通知由 `completeDeferredReadTransition(entryId)` 在真实 `onRemoveEnd` 后再跨一个 `endOfFrame` 发出，避免其他页面的同步工作吞掉 180ms 退场动画。若生命周期异常没有回调，控制器用 1 秒 fallback 保证通知最终发生。
-- 延后的视觉更新和跨页面通知分别带一次性 token；在执行前恢复未读会同时取消它们，避免极快 `Command-Z` 被迟到的“标为已读”更新覆盖。
-- 退场期间不要更新当前选中文章对象，也不要为单篇已读重复写入 `loadingState = Success(...)` 或额外执行 `allArticles.refresh()`；这些更新会无意义地重建右侧详情或放大通知成本。
-- 如果当前是未读模式并会删除卡片，原文浏览器必须等列表 `onRemoveEnd` 后再跨一帧打开。固定 `200ms` 延迟曾在动画中途抢走前台，视觉上看起来像没有动画。
-- 不要把这个特殊时序全局套到文章页按钮或 Android；默认参数刻意保持原行为。
-- 最终诊断结果：在约 `4799` 篇本地文章的环境中，增量可视更新耗时约 164–671 微秒；两次 `M` 和四次双击都完整经过动画 bucket `4→3→2→1→0`，双击在 141–166ms 内识别，且移除期间没有列表 reset。用户随后完成视觉确认。
+- 主时间线在未读模式下处理 `M` 或双击时，先登记后继文章并调用当前 `_TimelineArticleCardHost.animateOut()`；控制器的可见列表变更延后同样的 `180ms`，因此列表清理不会销毁仍在播放动画的行。
+- 本地数据库和耐久 read-sync 队列仍立即更新。网络同步额外延后 `500ms`，原生“编辑”菜单的历史通知延后到视觉生命周期结束；业务撤销项从登记时起已经可用，延后的只是菜单重建。
+- 单篇已读不能在动画首帧调用完整 `_applyFilter()` 或同步扇出 `ArticleStateNotifier`。完整内存模型、角标/计数和跨页面通知继续由 `completeDeferredReadTransition(entryId)` 在行清理后完成，并保留 fallback 防止生命周期异常时丢通知。
+- `_scheduleCompletedTimelineRemovals()` 观察稳定列表中已经消失的 entry id，随后完成协调器生命周期、切换并 reveal 后继文章、刷新延后的历史通知，以及按需打开外部浏览器。退场过程中保持当前详情，不能提前构建下一篇正文。
+- `Command-Z` 使用两阶段事件：`UndoService.preparingRestoreAction` 在数据库/列表插入前发布，页面据此把 entry id 标记为需要进场；`restoredAction` 只表示业务恢复已经完成。恢复后的选择和右侧详情必须等 `_TimelineArticleCardHost` 报告进场完成后再切换。
+- 进场控制器不能在新行第一次 build 时直接 `forward()`。当前先提交零尺寸/零透明度首帧，再通过下一次 post-frame 启动 `easeOutCubic`；退场使用 `easeInCubic`。探针 session 具有代次，旧 session 的超时不能关闭同一 entry id 的新 session。
+- 最终用户验证：`M` 退场与 `Command-Z` 进场均能看到完整约 `180–193ms` 过渡。恢复日志顺序为 `restore.preparing → restore.completed → local-entrance.queued/start/ticks/completed → restore.selection-restored`。仍可能在卡片已经不可见后观察到约 `125–155ms` 的普通列表清理构建，或在恢复首帧/详情切换时看到约 `15–31ms` 的慢帧；它们不再吞掉动画，但属于后续性能观察点。
+- 这套时序只用于 macOS 主时间线。垃圾拦截的审核动画、最近阅读和 Android 保留各自已验证路径，不要为了表面统一强制迁移。
 
 ## 最近阅读：点击不再立即重排
 

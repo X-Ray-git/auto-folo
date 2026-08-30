@@ -119,6 +119,9 @@ macOS 的业务撤销/重做由 `UndoService` + `BoundedHistory` 提供，容量
 - 误分类（<kbd>N</kbd>）是一条原子 UndoAction：撤销/重做同时恢复分类与已读状态。<kbd>N</kbd> 撤销时可先将动作前的完整快照写回数据库，但时间线内存快照必须暂时保持已读，再由 `markAsUnreadLocal` 完成唯一一次未读插入。如果内存也提前恢复为未读，标准恢复路径会提前返回，后续数据库通知只能通过整表结构刷新重插卡片，并会取消进场动画。
 - 静默订阅源整批标为已读只占一个业务撤销项；部分 Undo/Redo 会把已完成与未完成子集拆到 redo/undo 两侧，使两侧历史始终对应最终远端状态。
 - `UndoService` 使用 `BoundedHistory` 保存 undo/redo 双栈，并串行执行撤销/重做，避免快速连续按键造成网络回滚乱序。`UndoAction` 可以承载单篇或不可拆分的一批文章；页面只通过 redo preparation 在数据变化前登记列表离场；数据变更集中复用单篇或批量本地状态入口，不能在重做路径复制数据库规则。
+- macOS 主时间线恢复已读文章时使用两阶段事件。`preparingRestoreAction` 在本地状态写回前发出，页面用它为即将插入的 entry id 准备进场；`restoredAction` 在业务恢复完成后发出，用于通用反馈和其余页面。不要把准备事件合并回完成事件，否则新行第一次构建时已经来不及从零尺寸开始。
+- 标为已读的撤销项可以先写入历史、后发布菜单通知：`recordRead(... deferNotification: true)` 不影响 `canUndo` 或下一项内容，只避免原生菜单重建与卡片退场争抢帧；视觉生命周期结束后必须调用 `flushDeferredHistoryNotification()`。这不是延迟记录或丢失撤销能力。
+- 主时间线恢复后的选择与右侧详情等待行级进场动画完成。若先切换详情，首次正文构建会与进场争抢 UI isolate；若在首次 build 同步启动控制器，首个非零帧也会被布局成本吞掉。
 
 ## 菜单与反馈
 

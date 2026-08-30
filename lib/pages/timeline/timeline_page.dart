@@ -170,6 +170,9 @@ class _TimelineAnimationProbe {
   static String? _activeSource;
   static int _startedAtUs = 0;
   static bool _timingsInstalled = false;
+  static final List<String> _bufferedLines = <String>[];
+  static double _frameBudgetMs = 1000 / 60;
+  static int _sessionGeneration = 0;
 
   static bool get enabled => _requested && kDebugMode && Platform.isMacOS;
 
@@ -184,10 +187,19 @@ class _TimelineAnimationProbe {
     _activeEntryId = entryId;
     _activeSource = source;
     _startedAtUs = _clock.elapsedMicroseconds;
+    final generation = ++_sessionGeneration;
+    final refreshRate = fields['refreshHz'];
+    if (refreshRate is num && refreshRate > 0) {
+      _frameBudgetMs = 1000 / refreshRate.toDouble();
+    }
+    _bufferedLines.clear();
     log(entryId, event, fields);
     Future<void>.delayed(const Duration(seconds: 2), () {
-      if (_activeEntryId != entryId) return;
+      if (_activeEntryId != entryId || _sessionGeneration != generation) {
+        return;
+      }
       log(entryId, 'session.timeout');
+      _flushBufferedLines();
       _activeEntryId = null;
       _activeSource = null;
     });
@@ -203,19 +215,35 @@ class _TimelineAnimationProbe {
     final details = fields.entries
         .map((entry) => '${entry.key}=${entry.value}')
         .join(' ');
-    debugPrintSynchronously(
+    _bufferedLines.add(
       '[TimelineAnimationProbe +${elapsedMs.toStringAsFixed(1)}ms '
       'id=${shortId(entryId)} source=$_activeSource] '
       '$event${details.isEmpty ? '' : ' $details'}',
-      wrapWidth: 2000,
     );
   }
 
   static void finish(String entryId) {
     if (!enabled || _activeEntryId != entryId) return;
+    final generation = _sessionGeneration;
     log(entryId, 'session.finished');
-    _activeEntryId = null;
-    _activeSource = null;
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (_activeEntryId != entryId || _sessionGeneration != generation) {
+        return;
+      }
+      log(entryId, 'session.closed');
+      _flushBufferedLines();
+      _activeEntryId = null;
+      _activeSource = null;
+    });
+  }
+
+  static void _flushBufferedLines() {
+    if (_bufferedLines.isEmpty) return;
+    final lines = List<String>.from(_bufferedLines);
+    _bufferedLines.clear();
+    for (final line in lines) {
+      debugPrint(line, wrapWidth: 2000);
+    }
   }
 
   static void logTap(
@@ -224,7 +252,7 @@ class _TimelineAnimationProbe {
     required int elapsedSincePreviousTapMs,
   }) {
     if (!enabled) return;
-    debugPrintSynchronously(
+    debugPrint(
       '[TimelineTapProbe] id=${shortId(entryId)} '
       'double=$isDoubleTap previousMs=$elapsedSincePreviousTapMs',
       wrapWidth: 2000,
@@ -240,10 +268,11 @@ class _TimelineAnimationProbe {
       for (final timing in timings) {
         final buildMs = timing.buildDuration.inMicroseconds / 1000;
         final rasterMs = timing.rasterDuration.inMicroseconds / 1000;
-        if (buildMs < 16.7 && rasterMs < 16.7) continue;
+        if (buildMs < _frameBudgetMs && rasterMs < _frameBudgetMs) continue;
         log(entryId, 'frame.slow', {
           'buildMs': buildMs.toStringAsFixed(1),
           'rasterMs': rasterMs.toStringAsFixed(1),
+          'budgetMs': _frameBudgetMs.toStringAsFixed(1),
           'totalMs': timing.totalSpan.inMicroseconds ~/ 1000,
         });
       }
@@ -286,11 +315,19 @@ class _TimelinePageState extends State<TimelinePage> {
   final Map<String, ArticleModel> _pendingOriginalOpenAfterRemoval = {};
   double _estimatedMacTimelineItemExtent = _defaultMacTimelineItemExtent;
   bool _isHandlingMacReadShortcut = false;
+  Worker? _undoPrepareWorker;
   Worker? _undoRestoreWorker;
   Worker? _batchScopeWorker;
   bool _isSilentBatchMode = false;
   bool _isSilentBatchProcessing = false;
   final Set<String> _silentBatchSelection = {};
+  final Map<String, GlobalKey<_TimelineArticleCardHostState>>
+  _timelineCardHostKeys = {};
+  final Set<String> _preAnimatedRemovals = {};
+  final Map<String, ArticleModel> _preAnimatedRemovalArticles = {};
+  final Set<String> _pendingRemovalCompletions = {};
+  final Set<String> _pendingAnimatedEntrances = {};
+  final Map<String, UndoRestoreEvent> _pendingUndoSelectionRestores = {};
   _SourceReturnContext? _sourceReturnContext;
   _PendingArticleRestore? _pendingArticleRestore;
   bool _isRestoringSourceContext = false;
@@ -315,6 +352,10 @@ class _TimelinePageState extends State<TimelinePage> {
       revealArticle: _scrollToArticle,
     );
     controller.bindScrollToTopHandler(_scrollToTop);
+    _undoPrepareWorker = ever(
+      UndoService.preparingRestoreAction,
+      _handleUndoPrepareEvent,
+    );
     _undoRestoreWorker = ever(
       UndoService.restoredAction,
       _handleUndoRestoreEvent,
@@ -360,12 +401,14 @@ class _TimelinePageState extends State<TimelinePage> {
   @override
   void dispose() {
     controller.bindScrollToTopHandler(null);
+    UndoService.flushDeferredHistoryNotification();
     if (Platform.isMacOS) {
       HardwareKeyboard.instance.removeHandler(_handleHardwareKeyEvent);
       MacArticleShortcutService.instance.unregister(this);
       UndoService.unregisterRedoPreparation(this);
     }
     _listCoordinator.dispose();
+    _undoPrepareWorker?.dispose();
     _undoRestoreWorker?.dispose();
     _batchScopeWorker?.dispose();
     _scrollController.dispose();
@@ -828,11 +871,59 @@ class _TimelinePageState extends State<TimelinePage> {
     return Get.find<MainController>().currentIndex.value == 0;
   }
 
+  void _handleUndoPrepareEvent(UndoRestoreEvent? event) {
+    if (!mounted || event == null || !_isActiveMacTimeline) return;
+    final entryId = event.article.entryId;
+    _TimelineAnimationProbe.begin(
+      entryId,
+      source: 'commandZ.restore',
+      event: 'restore.preparing',
+      fields: _timelineProbeFields(article: event.article),
+    );
+    _preAnimatedRemovals.remove(entryId);
+    _preAnimatedRemovalArticles.remove(entryId);
+    _pendingRemovalCompletions.remove(entryId);
+    final host = _timelineCardHostKeys[entryId]?.currentState;
+    if (host != null) {
+      host.restore();
+    } else {
+      _pendingAnimatedEntrances.add(entryId);
+    }
+  }
+
   void _handleUndoRestoreEvent(UndoRestoreEvent? event) {
     if (!mounted || event == null || !_isActiveMacTimeline) return;
+    final entryId = event.article.entryId;
+    _pendingUndoSelectionRestores[entryId] = event;
+    _TimelineAnimationProbe.log(
+      entryId,
+      'restore.completed',
+      _timelineProbeFields(article: event.article),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActiveMacTimeline) return;
-      _listCoordinator.restoreSelection(event.article.entryId);
+      final host = _timelineCardHostKeys[entryId]?.currentState;
+      if (host?.isEntering ?? false) return;
+      _completeUndoSelectionRestore(entryId);
+    });
+  }
+
+  void _handleTimelineEntranceCompleted(String entryId) {
+    if (!mounted || !_isActiveMacTimeline) return;
+    _completeUndoSelectionRestore(entryId);
+  }
+
+  void _completeUndoSelectionRestore(String entryId) {
+    final event = _pendingUndoSelectionRestores.remove(entryId);
+    if (event == null) return;
+    _listCoordinator.restoreSelection(entryId);
+    _TimelineAnimationProbe.log(
+      entryId,
+      'restore.selection-restored',
+      _timelineProbeFields(article: event.article),
+    );
+    Future<void>.delayed(const Duration(milliseconds: 300), () {
+      _TimelineAnimationProbe.finish(entryId);
     });
   }
 
@@ -866,6 +957,7 @@ class _TimelinePageState extends State<TimelinePage> {
           ? 'detached'
           : 'multiple',
       'lastTapAgeMs': lastTapAgeMs,
+      'refreshHz': View.of(context).display.refreshRate,
     };
   }
 
@@ -914,6 +1006,7 @@ class _TimelinePageState extends State<TimelinePage> {
         _TimelineAnimationProbe.finish(article.entryId);
         return;
       }
+      _stageTimelineCardExit(article.entryId);
     } else {
       _selectRelativeArticle(1, scrollTo: false);
     }
@@ -993,11 +1086,25 @@ class _TimelinePageState extends State<TimelinePage> {
       _timelineProbeFields(article: article),
     );
     _listCoordinator.onRemoveStart(article);
+    scheduleMicrotask(() {
+      _TimelineAnimationProbe.log(article.entryId, 'remove.microtask');
+    });
+    Timer.run(() {
+      _TimelineAnimationProbe.log(article.entryId, 'remove.event-turn');
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _TimelineAnimationProbe.log(article.entryId, 'remove.next-frame');
+    });
   }
 
   void _handleTimelineRemoveEnd(ArticleModel article) {
+    _preAnimatedRemovals.remove(article.entryId);
+    _preAnimatedRemovalArticles.remove(article.entryId);
+    _pendingRemovalCompletions.remove(article.entryId);
+    _timelineCardHostKeys.remove(article.entryId);
     _listCoordinator.onRemoveEnd(article);
     controller.completeDeferredReadTransition(article.entryId);
+    UndoService.flushDeferredHistoryNotification();
     _TimelineAnimationProbe.log(
       article.entryId,
       'remove.end',
@@ -1018,6 +1125,58 @@ class _TimelinePageState extends State<TimelinePage> {
       );
     }
     _TimelineAnimationProbe.finish(article.entryId);
+  }
+
+  void _stageTimelineCardExit(String entryId) {
+    ArticleModel? article;
+    for (final candidate in controller.articles) {
+      if (candidate.entryId == entryId) {
+        article = candidate;
+        break;
+      }
+    }
+    if (article == null) {
+      for (final candidate in controller.allArticles) {
+        if (candidate.entryId == entryId) {
+          article = candidate;
+          break;
+        }
+      }
+    }
+    if (article == null) return;
+    _preAnimatedRemovalArticles[entryId] = article;
+    _preAnimatedRemovals.add(entryId);
+    final host = _timelineCardHostKeys[entryId]?.currentState;
+    host?.animateOut();
+  }
+
+  void _scheduleCompletedTimelineRemovals(List<ArticleModel> articles) {
+    if (_preAnimatedRemovalArticles.isEmpty) return;
+    final visibleEntryIds = articles.map((article) => article.entryId).toSet();
+    for (final entry in _preAnimatedRemovalArticles.entries.toList()) {
+      final entryId = entry.key;
+      if (visibleEntryIds.contains(entryId) ||
+          !_pendingRemovalCompletions.add(entryId)) {
+        continue;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _pendingRemovalCompletions.remove(entryId);
+        if (!mounted) return;
+        final restored = controller.articles.any(
+          (article) => article.entryId == entryId,
+        );
+        if (restored) {
+          _preAnimatedRemovals.remove(entryId);
+          _preAnimatedRemovalArticles.remove(entryId);
+          _timelineCardHostKeys[entryId]?.currentState?.restore();
+          return;
+        }
+        final removedArticle = _preAnimatedRemovalArticles[entryId];
+        if (removedArticle == null) return;
+        _handleTimelineRemoveStart(removedArticle);
+        _handleTimelineRemoveEnd(removedArticle);
+      });
+    }
   }
 
   void _handleMacReadShortcut() {
@@ -1076,6 +1235,7 @@ class _TimelinePageState extends State<TimelinePage> {
         _TimelineAnimationProbe.finish(current.entryId);
         return;
       }
+      _stageTimelineCardExit(current.entryId);
     } else {
       _selectRelativeArticle(1, scrollTo: false);
     }
@@ -1152,6 +1312,7 @@ class _TimelinePageState extends State<TimelinePage> {
         _TimelineAnimationProbe.finish(current.entryId);
         return;
       }
+      _stageTimelineCardExit(current.entryId);
     } else {
       _selectRelativeArticle(1, scrollTo: false);
     }
@@ -1203,8 +1364,9 @@ class _TimelinePageState extends State<TimelinePage> {
     final article = controller.articles[index];
     final expectsRemoval =
         controller.selectedMode.value == TimelineViewMode.unread;
-    if (expectsRemoval && !_listCoordinator.beginRemoval(article.entryId)) {
-      return false;
+    if (expectsRemoval) {
+      if (!_listCoordinator.beginRemoval(article.entryId)) return false;
+      _stageTimelineCardExit(article.entryId);
     }
     if (!expectsRemoval &&
         controller.selectedArticle.value?.entryId == article.entryId) {
@@ -1267,9 +1429,8 @@ class _TimelinePageState extends State<TimelinePage> {
               VerticalDivider(
                 width: 1,
                 thickness: 1,
-                color: Theme.of(
-                  context,
-                ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+                color: Theme.of(context).colorScheme.outlineVariant
+                    .withValues(alpha: 0.3),
               ),
               Expanded(
                 child: Obx(() {
@@ -1345,6 +1506,8 @@ class _TimelinePageState extends State<TimelinePage> {
     return Obx(() {
       Widget content;
       if (Platform.isMacOS) {
+        final articles = controller.articles.toList(growable: false);
+        _scheduleCompletedTimelineRemovals(articles);
         content = ScrollbarTheme(
           data: MacGlassScrollbarStyle.articlePaneTheme(context),
           child: Padding(
@@ -1352,26 +1515,36 @@ class _TimelinePageState extends State<TimelinePage> {
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: ImplicitlyAnimatedList<ArticleModel>(
+                  child: ListView.builder(
                     key: ValueKey(
                       '${controller.selectedMode.value}:${controller.timelineScopeKey}',
                     ),
-                    batchUpdateVersion: controller.timelineListResetVersion,
                     physics: _refreshPhysics,
                     controller: _scrollController,
                     padding: MacArticleListChrome.contentPadding(context),
-                    items: controller.articles.toList(),
-                    itemKey: (article) => article.entryId,
-                    itemBuilder: _buildAnimatedTimelineItem,
-                    removedItemBuilder: _buildRemovedTimelineItem,
-                    onRemoveStart: _handleTimelineRemoveStart,
-                    onRemoveEnd: _handleTimelineRemoveEnd,
+                    itemCount: articles.length,
+                    findChildIndexCallback: (key) {
+                      if (key is! ValueKey<_TimelineRowIdentity>) return null;
+                      final entryId = key.value.entryId;
+                      final index = articles.indexWhere(
+                        (article) => article.entryId == entryId,
+                      );
+                      return index < 0 ? null : index;
+                    },
+                    itemBuilder: (context, index) {
+                      return _buildAnimatedTimelineItem(
+                        context,
+                        articles[index],
+                        index,
+                        kAlwaysCompleteAnimation,
+                      );
+                    },
                   ),
                 ),
-                if (controller.articles.isEmpty)
+                if (articles.isEmpty)
                   Positioned.fill(
                     child: DelayedVisibility(
-                      visible: controller.articles.isEmpty,
+                      visible: articles.isEmpty,
                       delay: const Duration(milliseconds: 220),
                       child: _EmptyView(
                         message: controller.emptyMessage,
@@ -1469,133 +1642,228 @@ class _TimelinePageState extends State<TimelinePage> {
       article.entryId,
       () => GlobalKey(),
     );
-    return SizeTransition(
-      sizeFactor: animation,
-      alignment: Alignment.bottomCenter,
-      child: FadeTransition(
-        opacity: animation,
-        child: Obx(() {
-          final selectedId = controller.selectedArticle.value?.entryId;
-          final card = ArticleCard(
-            key: articleKey,
-            article: article,
-            isSelected: selectedId == article.entryId,
-            onTap: () => _handleMacArticleTap(article),
-          );
-          if (!_isSilentBatchMode) return card;
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              card,
-              Positioned(
-                top: 1,
-                right: 5,
-                child: _SilentBatchSelectionIndicator(
-                  selected: _silentBatchSelection.contains(article.entryId),
-                  onPressed: () => _toggleSilentBatchArticle(article.entryId),
-                ),
-              ),
-            ],
-          );
-        }),
-      ),
+    final hostKey = _timelineCardHostKeys.putIfAbsent(
+      article.entryId,
+      () => GlobalKey<_TimelineArticleCardHostState>(),
     );
-  }
-
-  Widget _buildRemovedTimelineItem(
-    BuildContext context,
-    ArticleModel article,
-    int index,
-    Animation<double> animation,
-  ) {
-    final articleKey = _listCoordinator.removedItemKeyFor(article.entryId);
-    final transition = SizeTransition(
-      sizeFactor: animation,
-      alignment: Alignment.topCenter,
-      child: FadeTransition(
-        opacity: animation,
-        child: ArticleCard(
-          key: articleKey,
+    final animateEntrance = _pendingAnimatedEntrances.remove(article.entryId);
+    return KeyedSubtree(
+      key: ValueKey<_TimelineRowIdentity>(
+        _TimelineRowIdentity(article.entryId),
+      ),
+      child: Obx(() {
+        final selectedId = controller.selectedArticle.value?.entryId;
+        return _TimelineArticleCardHost(
+          key: hostKey,
+          animateEntrance: animateEntrance,
+          articleKey: articleKey,
           article: article,
-          isSelected:
-              controller.selectedArticle.value?.entryId == article.entryId,
-          onTap: () {},
-        ),
-      ),
-    );
-    if (!_TimelineAnimationProbe.enabled) return transition;
-    return _TimelineRemovalAnimationProbe(
-      entryId: article.entryId,
-      animation: animation,
-      child: transition,
+          isSelected: selectedId == article.entryId,
+          onTap: () => _handleMacArticleTap(article),
+          isSilentBatchMode: _isSilentBatchMode,
+          isSilentBatchSelected: _silentBatchSelection.contains(
+            article.entryId,
+          ),
+          onToggleSilentBatch: () => _toggleSilentBatchArticle(article.entryId),
+          onEntranceCompleted: () =>
+              _handleTimelineEntranceCompleted(article.entryId),
+        );
+      }),
     );
   }
 }
 
-class _TimelineRemovalAnimationProbe extends StatefulWidget {
-  const _TimelineRemovalAnimationProbe({
-    required this.entryId,
-    required this.animation,
-    required this.child,
-  });
+class _TimelineRowIdentity {
+  const _TimelineRowIdentity(this.entryId);
 
   final String entryId;
-  final Animation<double> animation;
-  final Widget child;
 
   @override
-  State<_TimelineRemovalAnimationProbe> createState() =>
-      _TimelineRemovalAnimationProbeState();
+  bool operator ==(Object other) {
+    return other is _TimelineRowIdentity && other.entryId == entryId;
+  }
+
+  @override
+  int get hashCode => entryId.hashCode;
 }
 
-class _TimelineRemovalAnimationProbeState
-    extends State<_TimelineRemovalAnimationProbe> {
-  int? _lastBucket;
+/// Owns the only transition layer used by a macOS timeline row.
+///
+/// The surrounding list is deliberately non-animated. The live card first
+/// animates to zero here; only then does the controller remove the already
+/// invisible row from the lazy list.
+class _TimelineArticleCardHost extends StatefulWidget {
+  const _TimelineArticleCardHost({
+    super.key,
+    required this.animateEntrance,
+    required this.articleKey,
+    required this.article,
+    required this.isSelected,
+    required this.onTap,
+    required this.isSilentBatchMode,
+    required this.isSilentBatchSelected,
+    required this.onToggleSilentBatch,
+    required this.onEntranceCompleted,
+  });
+
+  final bool animateEntrance;
+  final GlobalKey articleKey;
+  final ArticleModel article;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final bool isSilentBatchMode;
+  final bool isSilentBatchSelected;
+  final VoidCallback onToggleSilentBatch;
+  final VoidCallback onEntranceCompleted;
+
+  @override
+  State<_TimelineArticleCardHost> createState() =>
+      _TimelineArticleCardHostState();
+}
+
+class _TimelineArticleCardHostState extends State<_TimelineArticleCardHost>
+    with SingleTickerProviderStateMixin {
+  late Widget _card;
+  late final AnimationController _transitionController;
+  late final Animation<double> _entranceAnimation;
+  late final Animation<double> _exitAnimation;
+  bool _isEntering = false;
+  bool _isExiting = false;
+  bool _entranceStartScheduled = false;
+  int? _lastEntranceProbeBucket;
+  int? _lastExitProbeBucket;
+
+  bool get isEntering => _isEntering;
 
   @override
   void initState() {
     super.initState();
-    widget.animation.addListener(_handleAnimation);
-    widget.animation.addStatusListener(_handleStatus);
-    _TimelineAnimationProbe.log(widget.entryId, 'remove.builder-attached', {
-      'value': widget.animation.value.toStringAsFixed(3),
-      'status': widget.animation.status.name,
-    });
-    _handleAnimation();
+    _transitionController = AnimationController(
+      vsync: this,
+      duration: TimelineController.deferredCardExitDuration,
+      value: widget.animateEntrance ? 0 : 1,
+    );
+    _entranceAnimation = _transitionController.drive(
+      CurveTween(curve: Curves.easeOutCubic),
+    );
+    _exitAnimation = _transitionController.drive(
+      CurveTween(curve: Curves.easeInCubic),
+    );
+    _transitionController.addListener(_logExitTick);
+    _transitionController.addListener(_logEntranceTick);
+    _transitionController.addStatusListener(_handleTransitionStatus);
+    _rebuildCard();
+    if (widget.animateEntrance) {
+      _isEntering = true;
+      _scheduleEntrance();
+    }
   }
 
   @override
-  void didUpdateWidget(_TimelineRemovalAnimationProbe oldWidget) {
+  void didUpdateWidget(_TimelineArticleCardHost oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.animation == widget.animation) return;
-    oldWidget.animation.removeListener(_handleAnimation);
-    oldWidget.animation.removeStatusListener(_handleStatus);
-    _lastBucket = null;
-    widget.animation.addListener(_handleAnimation);
-    widget.animation.addStatusListener(_handleStatus);
-    _handleAnimation();
+    if (!identical(oldWidget.articleKey, widget.articleKey) ||
+        !identical(oldWidget.article, widget.article) ||
+        oldWidget.isSelected != widget.isSelected ||
+        oldWidget.isSilentBatchMode != widget.isSilentBatchMode ||
+        oldWidget.isSilentBatchSelected != widget.isSilentBatchSelected) {
+      _rebuildCard();
+    }
   }
 
-  @override
-  void dispose() {
-    widget.animation.removeListener(_handleAnimation);
-    widget.animation.removeStatusListener(_handleStatus);
-    _TimelineAnimationProbe.log(widget.entryId, 'remove.builder-disposed', {
-      'value': widget.animation.value.toStringAsFixed(3),
-      'status': widget.animation.status.name,
+  void _rebuildCard() {
+    final card = ArticleCard(
+      key: widget.articleKey,
+      article: widget.article,
+      isSelected: widget.isSelected,
+      onTap: _handleTap,
+    );
+    if (!widget.isSilentBatchMode) {
+      _card = card;
+      return;
+    }
+    _card = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        card,
+        Positioned(
+          top: 1,
+          right: 5,
+          child: _SilentBatchSelectionIndicator(
+            selected: widget.isSilentBatchSelected,
+            onPressed: widget.onToggleSilentBatch,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _handleTap() => widget.onTap();
+
+  void animateOut() {
+    if (_isExiting) return;
+    _TimelineAnimationProbe.log(widget.article.entryId, 'local-exit.start');
+    _lastExitProbeBucket = null;
+    setState(() {
+      _isEntering = false;
+      _isExiting = true;
     });
-    super.dispose();
+    _transitionController.reverse(from: 1);
   }
 
-  void _handleStatus(AnimationStatus status) {
-    _TimelineAnimationProbe.log(widget.entryId, 'remove.animation-status', {
-      'status': status.name,
-      'value': widget.animation.value.toStringAsFixed(3),
+  void restore() {
+    if (_transitionController.value >= 1 && !_isExiting) {
+      return;
+    }
+    setState(() {
+      _isExiting = false;
+      _isEntering = true;
+    });
+    _lastEntranceProbeBucket = null;
+    _scheduleEntrance();
+  }
+
+  void _scheduleEntrance() {
+    if (_entranceStartScheduled) return;
+    _entranceStartScheduled = true;
+    _TimelineAnimationProbe.log(
+      widget.article.entryId,
+      'local-entrance.queued',
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _entranceStartScheduled = false;
+      if (!mounted || !_isEntering) return;
+      _TimelineAnimationProbe.log(
+        widget.article.entryId,
+        'local-entrance.start',
+      );
+      _transitionController.forward();
     });
   }
 
-  void _handleAnimation() {
-    final value = widget.animation.value;
+  void _handleTransitionStatus(AnimationStatus status) {
+    if (!mounted) return;
+    if (status == AnimationStatus.completed && _isEntering) {
+      _TimelineAnimationProbe.log(
+        widget.article.entryId,
+        'local-entrance.completed',
+      );
+      setState(() => _isEntering = false);
+      widget.onEntranceCompleted();
+      return;
+    }
+    if (status == AnimationStatus.dismissed && _isExiting) {
+      _TimelineAnimationProbe.log(
+        widget.article.entryId,
+        'local-exit.completed',
+      );
+    }
+  }
+
+  void _logExitTick() {
+    if (!_TimelineAnimationProbe.enabled) return;
+    if (!_isExiting) return;
+    final value = _transitionController.value;
     final bucket = switch (value) {
       >= 0.95 => 4,
       >= 0.70 => 3,
@@ -1603,17 +1871,78 @@ class _TimelineRemovalAnimationProbeState
       >= 0.20 => 1,
       _ => 0,
     };
-    if (_lastBucket == bucket) return;
-    _lastBucket = bucket;
-    _TimelineAnimationProbe.log(widget.entryId, 'remove.animation-progress', {
-      'bucket': bucket,
-      'value': value.toStringAsFixed(3),
-      'status': widget.animation.status.name,
-    });
+    if (_lastExitProbeBucket == bucket && value > 0) return;
+    _lastExitProbeBucket = bucket;
+    _TimelineAnimationProbe.log(
+      widget.article.entryId,
+      'local-exit.animation-tick',
+      {
+        'raw': value.toStringAsFixed(3),
+        'curved': _exitAnimation.value.toStringAsFixed(3),
+        'opacity': _exitAnimation.value.toStringAsFixed(3),
+        'status': _transitionController.status.name,
+        'scheduler': SchedulerBinding.instance.schedulerPhase.name,
+        'systemFrameUs': SchedulerBinding
+            .instance
+            .currentSystemFrameTimeStamp
+            .inMicroseconds,
+      },
+    );
+  }
+
+  void _logEntranceTick() {
+    if (!_TimelineAnimationProbe.enabled || !_isEntering) return;
+    final value = _transitionController.value;
+    final bucket = switch (value) {
+      >= 0.95 => 4,
+      >= 0.70 => 3,
+      >= 0.45 => 2,
+      >= 0.20 => 1,
+      _ => 0,
+    };
+    if (_lastEntranceProbeBucket == bucket && value < 1) return;
+    _lastEntranceProbeBucket = bucket;
+    _TimelineAnimationProbe.log(
+      widget.article.entryId,
+      'local-entrance.animation-tick',
+      {
+        'raw': value.toStringAsFixed(3),
+        'curved': _entranceAnimation.value.toStringAsFixed(3),
+        'opacity': _entranceAnimation.value.toStringAsFixed(3),
+        'status': _transitionController.status.name,
+      },
+    );
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  void dispose() {
+    _transitionController.removeListener(_logExitTick);
+    _transitionController.removeListener(_logEntranceTick);
+    _transitionController.removeStatusListener(_handleTransitionStatus);
+    _transitionController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isExiting) {
+      return IgnorePointer(
+        child: SizeTransition(
+          sizeFactor: _exitAnimation,
+          alignment: Alignment.topCenter,
+          child: FadeTransition(opacity: _exitAnimation, child: _card),
+        ),
+      );
+    }
+    if (_isEntering) {
+      return SizeTransition(
+        sizeFactor: _entranceAnimation,
+        alignment: Alignment.bottomCenter,
+        child: FadeTransition(opacity: _entranceAnimation, child: _card),
+      );
+    }
+    return _card;
+  }
 }
 
 // ─── 优雅的加载骨架屏（与新版卡片像素级对齐） ───
