@@ -252,7 +252,39 @@ abstract final class HtmlChunkParser {
     final chunks = <HtmlChunk>[];
     _processMixedNodes(fragment.nodes, chunks);
 
-    return _mergeAdjacentParagraphs(chunks);
+    final renderableChunks = chunks
+        .where(_hasRenderableChunkContent)
+        .toList(growable: false);
+    return _mergeAdjacentParagraphs(renderableChunks);
+  }
+
+  static bool _hasRenderableChunkContent(HtmlChunk chunk) {
+    switch (chunk.type) {
+      case HtmlChunkType.heading:
+      case HtmlChunkType.paragraph:
+      case HtmlChunkType.blockquote:
+      case HtmlChunkType.table:
+      case HtmlChunkType.list:
+      case HtmlChunkType.rawHtml:
+        final fragment = html_parser.parseFragment(chunk.content);
+        final visibleText = (fragment.text ?? '').replaceAll(
+          RegExp(r'[\s\u00a0\u200b-\u200d\u2060\ufeff]'),
+          '',
+        );
+        if (visibleText.isNotEmpty) return true;
+
+        // Widget-only HTML is safe inside SelectionArea and must remain visible.
+        // Empty formatting structures are not: flutter_html can turn them into
+        // an empty Text.rich, which violates RenderParagraph's selection range.
+        return fragment.querySelector('img, iframe, video, audio') != null;
+      case HtmlChunkType.codeBlock:
+        return chunk.content.trim().isNotEmpty;
+      case HtmlChunkType.image:
+      case HtmlChunkType.horizontalRule:
+      case HtmlChunkType.iframeVideo:
+      case HtmlChunkType.authorList:
+        return true;
+    }
   }
 
   static void _processMixedNodes(

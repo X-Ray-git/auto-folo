@@ -5,6 +5,41 @@ import 'package:fourier/pages/article/widgets/html_chunk_card.dart';
 import 'package:fourier/utils/html_chunk_parser.dart';
 
 void main() {
+  test('empty formatting structures do not become selectable text chunks', () {
+    const html = '''
+<p><br></p>
+<p><span></span></p>
+<p><a href="https://example.com"></a></p>
+<blockquote><br></blockquote>
+<ul><li><span></span></li></ul>
+<table><tbody><tr><td><br></td></tr></tbody></table>
+<source type="image/webp" srcset="https://example.com/image.webp">
+<input disabled type="checkbox">
+<button><svg></svg></button>
+''';
+
+    expect(HtmlChunkParser.parseSync(html), isEmpty);
+  });
+
+  test('meaningful text and widget-only content remain renderable', () {
+    const html = '''
+<p>Hello <code>world</code> <a href="https://example.com">link</a></p>
+<blockquote><img src="https://example.com/image.webp"></blockquote>
+<hr>
+''';
+
+    final chunks = HtmlChunkParser.parseSync(html);
+
+    expect(
+      chunks.map((chunk) => chunk.type),
+      containsAll(<HtmlChunkType>[
+        HtmlChunkType.paragraph,
+        HtmlChunkType.blockquote,
+        HtmlChunkType.horizontalRule,
+      ]),
+    );
+  });
+
   test('resource-less media remains as an unavailable chunk', () {
     final chunks = HtmlChunkParser.parseSync('<audio></audio>');
 

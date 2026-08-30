@@ -153,6 +153,14 @@ HTML 空段规范化：
 - 新智元文章《奥特曼回斯坦福认错：思考外包给AI，一代人大脑正在萎缩》的源 HTML 把几乎每句话放在独立 `<p>` 中，并在段落间插入 `<p><span><br></span></p>`。旧清洗在 152 个段落中残留 82 个这种空段，chunk 合并又在每个段落之间添加 `<br><br>`，最终相邻句子间最多叠加 5 个 `<br>`。当前窄修复只删除空格式段，使其回到标准段落间距。
 - 不要自动合并该类“一句话一个 `<p>`”的正常非空段落。这是上游排版语义；可靠合并需要复杂启发式，会增加误伤和维护成本，用户已明确暂不考虑。
 
+渲染前空 chunk 防线：
+
+- Flutter `3.47.0` 的 `RenderParagraph` 会为 `SelectionArea` 内的富文本建立可选择区间；如果 `flutter_html` 把 `<br>`、空链接、空列表、孤立 `<source>`、无文字禁用表单等结构转成零字符 `Text.rich`，会触发 `paragraph.dart` 中 `range.isValid && !range.isCollapsed && range.isNormalized` 断言。该异常发生在正文显示阶段，可能在全文补抓后首次打开文章时出现，但它不是网络抓取失败。
+- `HtmlChunkParser` 在完成 DOM 分块、合并相邻段落之前统一执行最终可渲染性检查。heading、paragraph、blockquote、table、list 和 rawHtml chunk 必须包含去除空白/NBSP/零宽字符后的可见文字，或包含可渲染的图片、iframe、video、audio；真正的 image、media placeholder、horizontal rule、author list 和非空 code block 按类型保留。
+- 这道防线只丢弃没有视觉或正文语义的 chunk，不改写数据库原始 HTML，不扩展来源特判，也不删除有文字的邮件按钮、普通链接、行内代码、数据表或媒体。现有缓存文章下次解析时自动生效，不需要数据库迁移或重新拉取全文。
+- 2026-08-31 使用正在使用的 Hive 数据库只读快照审计 4367 篇文章：修复前规范化并分块后有 888 个零文本/无媒体渲染块，修复后为 0。测试最小覆盖空段、空链接、空引用、空列表、空表格、孤立 source、禁用 input、纯图标 button，以及正常文字/链接/行内代码/图片引用/分隔线保留。
+- 同次审计还看到 14 条真实 Readability 提取失败状态，错误为“没有可解析正文”或“提取内容没有比摘要更长”，与本断言无关。失败状态跨后续刷新再次入队的节奏尚未重新设计，见[待办与搁置事项](../status/pending.html)。
+
 来源兼容规则：
 
 - 依赖站点 CSS 才能成立的窄兼容修复集中放在 `ArticleContentCompatibility`，由 `ArticleContentUtils.normalizeHtml()` 在通用安全清洗后、图片 URL 规范化前调用。不要把来源判断散落到 `HtmlChunkParser` 或普通图片 widget，也不要为单一规则引入动态规则引擎。

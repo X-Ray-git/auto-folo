@@ -1337,6 +1337,23 @@
 - 不要为摘要和过滤复制两份图片解析、去重与上限规则。
 </details>
 
+## 空 HTML chunk 在解析边界过滤，保留全文选择（2026-08-31）
+
+背景：用户在全文补抓相关使用过程中看到 Flutter `paragraph.dart` 的 `range.isValid && !range.isCollapsed && range.isNormalized` 断言。框架源码和最小复现确认：`SelectionArea` 包含零字符 `Text.rich(TextSpan())` 时，`RenderParagraph` 会为 `0..0` 创建 collapsed selectable range 并触发断言。只读复制正在使用的 Hive 数据库后，对 4367 篇文章执行与生产一致的 normalize + chunk parse，发现 888 个零文本且无媒体的渲染块，主要是 `<br>`、空 span/anchor、空 blockquote/list、孤立 picture source 和无文字禁用表单；修复前代码只检查 HTML 字符串非空，无法识别这些结构。数据库中的 Readability/翻译/摘要错误记录没有该断言，证明它是正文显示错误，不是请求错误。
+
+决策：保留文章级 `SelectionArea` 和正文 `Column`。在 `HtmlChunkParser` 完成 DOM 分块后、相邻 paragraph 合并前增加统一可渲染性检查：文本型 chunk 必须有去除普通空白、NBSP 和零宽字符后的文字，或包含实际媒体；其他语义 chunk 按类型保留。过滤只影响生成的视觉 chunk，不改写源 HTML、不做订阅源特判、不迁移数据库，也不扩大到合并正常段落。带文字的按钮和链接继续保留，纯装饰或禁用空控件被丢弃。最小回归测试覆盖空结构和正常内容两面。
+
+后果：同一数据库快照重新审计后问题块为 0，现有文章重新解析即可恢复，不需要重新抓取。`flutter test --no-pub` 273 项通过；`dart analyze lib test` 无 error/warning，仅保留 59 条既有 `prefer_initializing_formals` info。审计另发现 14 条真实 Readability 失败，并确认单轮有限重试会在后续刷新重新入队而累计 attempts；该问题涉及失败分类和重试产品节奏，明确不混入本次渲染修复，已进入待办。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要为消除断言关闭全文选择、删除文章级 `SelectionArea`，或改回影响目录/图片生命周期的正文虚拟化。
+- 不要把 HTML 字符串“非空”当成可见正文；判断必须基于 DOM 文本和可渲染媒体。
+- 不要在来源兼容层按文章、订阅源或具体标签堆叠同类特判；最终解析边界必须继续承担统一防线。
+- 不要把 Readability 网络/解析失败与正文选择断言合并成一个错误处理分支。
+</details>
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>
