@@ -5,8 +5,38 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fourier/pages/article/widgets/html_chunk_card.dart';
 import 'package:fourier/utils/html_chunk_parser.dart';
+import 'package:fourier/utils/selectable_html_compatibility.dart';
 
 void main() {
+  test('list selection compatibility unwraps redundant item paragraphs', () {
+    final normalized = SelectableHtmlCompatibility.normalizeList('''
+<ul>
+  <li><p><strong>First:</strong> value</p></li>
+  <li><p>Second item</p></li>
+</ul>
+''');
+
+    expect(normalized, contains('<li>• <strong>First:</strong> value</li>'));
+    expect(normalized, contains('<li>• Second item</li>'));
+    expect(normalized, isNot(contains('<li>• <p>')));
+  });
+
+  test('list selection compatibility preserves real item paragraphs', () {
+    final normalized = SelectableHtmlCompatibility.normalizeList('''
+<ol start="3">
+  <li value="5"><p>First paragraph</p><p>Second paragraph</p></li>
+  <li><p>Parent</p><ul><li><p>Nested item</p></li></ul></li>
+</ol>
+''');
+
+    expect(
+      normalized,
+      contains('<li value="5">5. First paragraph<br><br>Second paragraph</li>'),
+    );
+    expect(normalized, contains('6. Parent<br><ul>'));
+    expect(normalized, contains('&nbsp;&nbsp;&nbsp;&nbsp;• Nested item'));
+  });
+
   testWidgets('macOS mouse drag selects rendered article paragraph', (
     tester,
   ) async {
@@ -110,7 +140,8 @@ void main() {
 
   for (final sample in <String, String>{
     'blockquote': '<blockquote><p>Fourier quoted selection remains available.</p></blockquote>',
-    'list': '<ul><li>Fourier listed selection remains available.</li></ul>',
+    'list':
+        '<ul><li><p>Fourier listed selection remains available.</p></li></ul>',
   }.entries) {
     testWidgets('macOS mouse drag selects rendered ${sample.key}', (
       tester,
@@ -209,7 +240,7 @@ void main() {
   testWidgets('Android long press selects rendered list text', (tester) async {
     SelectedContent? selected;
     final chunk = HtmlChunkParser.parseSync(
-      '<ol><li>Fourier Android listed selection remains available.</li></ol>',
+      '<ol><li><p>Fourier Android listed selection remains available.</p></li></ol>',
     ).single;
 
     await tester.pumpWidget(

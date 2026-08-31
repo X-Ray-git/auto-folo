@@ -24,6 +24,7 @@ import '../../../utils/youtube_embed_utils.dart';
 import '../../../utils/html_contrast_utils.dart';
 import '../../../utils/image_clipboard.dart';
 import '../../../utils/macos_zoom_in_cursor.dart';
+import '../../../utils/selectable_html_compatibility.dart';
 import '../../../services/article_image_service.dart';
 import '../../../services/animation_activity_monitor.dart';
 import '../../../services/article_image_cache_service.dart';
@@ -742,7 +743,7 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
     }
     final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
     if (usesSelectionWorkaround) {
-      htmlData = _buildSelectableListHtml(htmlData);
+      htmlData = SelectableHtmlCompatibility.normalizeList(htmlData);
     }
     final html = Html(
       data: htmlData,
@@ -783,53 +784,6 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
     return usesSelectionWorkaround
         ? Padding(padding: const EdgeInsets.only(left: 20), child: html)
         : html;
-  }
-
-  String _buildSelectableListHtml(String html) {
-    final fragment = html_parser.parseFragment(html);
-
-    void addMarkers(dom.Element list, int depth) {
-      final ordered = list.localName?.toLowerCase() == 'ol';
-      var ordinal = int.tryParse(list.attributes['start'] ?? '') ?? 1;
-      final items = list.children
-          .where((child) => child.localName?.toLowerCase() == 'li')
-          .toList(growable: false);
-
-      for (final item in items) {
-        final explicitValue = int.tryParse(item.attributes['value'] ?? '');
-        if (explicitValue != null) ordinal = explicitValue;
-        final marker = ordered ? '${ordinal++}.' : '•';
-        final indent = List.filled(depth * 4, '\u00a0').join();
-        item.nodes.insert(0, dom.Text('$indent$marker '));
-
-        final nestedLists = item.children
-            .where((child) {
-              final tag = child.localName?.toLowerCase();
-              return tag == 'ul' || tag == 'ol';
-            })
-            .toList(growable: false);
-        for (final nested in nestedLists) {
-          final nestedIndex = item.nodes.indexOf(nested);
-          final previous = nestedIndex > 0 ? item.nodes[nestedIndex - 1] : null;
-          final alreadyStartsOnNewLine =
-              previous is dom.Element &&
-              previous.localName?.toLowerCase() == 'br';
-          if (!alreadyStartsOnNewLine) {
-            item.nodes.insert(nestedIndex, dom.Element.tag('br'));
-          }
-          addMarkers(nested, depth + 1);
-        }
-      }
-    }
-
-    for (final list in fragment.querySelectorAll('ul, ol').toList()) {
-      final parentTag = list.parent?.localName?.toLowerCase();
-      if (parentTag != 'li') addMarkers(list, 0);
-    }
-    return fragment.nodes.map((node) {
-      if (node is dom.Element) return node.outerHtml;
-      return htmlEscape.convert(node.text ?? '');
-    }).join();
   }
 
   // ── 分割线 ──

@@ -166,9 +166,9 @@ HTML 空段规范化：
 - 文章页继续由一个外层 `SelectionArea` 包裹完整正文。macOS 使用鼠标拖选，Android 使用长按选择；`Command-C` 必须继续交给系统复制当前选区，不能被无修饰键 `C` 的 Markdown 全文复制快捷键覆盖。
 - Flutter `3.47.0` 配合 `flutter_html 3.0.0` 时，非空的标题、段落、引用和列表也可能无法选择：`flutter_html` 会把块级 `html/body/div/p/ul/ol/li` 组织成以 `WidgetSpan` 开头的嵌套 `RichText`。macOS 拖选会得到空字符串，Android 长按可能只得到 U+FFFC 对象替代符，而不是正文。该问题不同于前述“空 chunk 触发断言”，上游已确认为 Flutter 选择偏移问题：<https://github.com/flutter/flutter/issues/187506>。
 - `HtmlChunkParser` 已经把正文拆成独立布局块，因此 `HtmlChunkCard` 在 macOS/Android 渲染 heading、paragraph、blockquote、list 时，把只承担解析包裹职责的节点改为 inline，避免再生成冗余的 leading `WidgetSpan`。这只改变 widget 结构，不修改数据库正文、规范化 HTML 或导出内容。
-- blockquote 在选择兼容路径中只移除顶层 `p/div` 包裹，并以两个 `<br>` 保留多个独立块的段落语义；外层引用容器、左侧主题色线、链接和行内代码样式不变。list 会把项目符号或序号写入同一个可选择文本流，保留 `ol start`、`li value`、嵌套层级及外层 `20px` 缩进。
+- blockquote 在选择兼容路径中只移除顶层 `p/div` 包裹，并以两个 `<br>` 保留多个独立块的段落语义；外层引用容器、左侧主题色线、链接和行内代码样式不变。list 先由 `SelectableHtmlCompatibility` 展开 `li` 直属的冗余 `p/div` 包裹，再把项目符号或序号写入同一个可选择文本流；单段 `<li><p>…</p></li>` 不产生额外换行，多段列表项以两个 `<br>` 保留段落边界，同时保留链接、行内代码、`ol start`、`li value`、嵌套层级及外层 `20px` 缩进。
 - 表格和代码块使用自己的纯文本/表格渲染路径，本轮不改。不要把所有 HTML 粗暴转成纯文本，也不要给正文插入零宽哨兵字符；前者会丢失链接和排版，后者不能修正嵌套 selectable 的偏移结构。
-- 回归测试必须断言选区中包含真实单词，不能只断言 `SelectedContent` 非空，否则 Android 的 U+FFFC 会造成假通过。当前覆盖 macOS 段落、标题、引用、列表鼠标拖选，以及 Android 段落、序号列表长按选择。
+- 回归测试必须断言选区中包含真实单词，不能只断言 `SelectedContent` 非空，否则 Android 的 U+FFFC 会造成假通过。列表样本必须使用常见的 `<li><p>…</p></li>`，不能只覆盖简化的 `<li>…</li>`；当前覆盖 macOS 段落、标题、引用、列表鼠标拖选，以及 Android 段落、序号列表长按选择。
 
 来源兼容规则：
 
@@ -194,7 +194,7 @@ HTML 空段规范化：
 
 - 使用 `ArticleImageService` 处理代理/请求头。
 - 图片规范化会用文章原文 URL 解析 `/path`、`./path` 和 `../path` 相对地址，再进行 HTTP/HTTPS 校验。没有可靠来源 URL 时继续保留原属性但不加载，不猜测站点域名。AddyOsmani.com 的 `Software Factories, Light and Dark` 已用真实缓存样本确认可解析出 4 个绝对 SVG 地址。
-- 正文与图片查看器支持 SVG；SVG 通过 `ArticleSvgImage` 读取 `ArticleImageCacheService` 的文章级磁盘缓存后交给 `flutter_svg`，不能改回独立网络加载，否则后台预取会对 SVG 失效。普通位图仍走 `CachedNetworkImage`。
+- 正文与图片查看器支持 SVG；真正的 SVG 通过 `ArticleSvgImage` 读取 `ArticleImageCacheService` 的文章级磁盘缓存后交给 `flutter_svg`，不能改回独立网络加载，否则后台预取会对 SVG 失效。普通位图仍走 `CachedNetworkImage`。图片代理地址可能在路径末尾保留嵌套源文件的 `.svg`，但以 `f_auto` 等变换参数实际返回 PNG/WebP；`ArticleImageService.isSvg()` 必须先排除这种明确的自动格式输出，不能只看路径后缀。
 - macOS 与 Android 正文图片都使用 `ArticleImageCacheService` 的文章级缓存键。`HtmlChunkCard` 和 `ImageGalleryPage` 必须携带 `entryId`，确保正常阅读、后台预取、图片查看器和已读后清理命中同一套缓存；历史 `v2_` 缓存暂不迁移。
 - macOS 刷新完成后预取全部本地未读文章的正文静态图片：按文章顺序、每篇最多 8 张、总调度并发 16；当前文章前 4 张提升到队首。
 - Android 使用保守参数：刷新时预取前 50 篇本地未读文章、每篇最多 4 张、总调度并发 4；当前文章前 2 张提升到队首。当前不区分 Wi-Fi 与移动网络。不要加入 hover 触发，也不要把预取改成批量 `precacheImage()` 常驻内存。
@@ -204,7 +204,7 @@ HTML 空段规范化：
 - 避免会改变图片布局尺寸的 hover 效果；哪怕很小的尺寸变化也会移动后续文字，在桌面端显得不稳定。
 - 很小的分隔符类图片不应被拉伸成大占位。
 - 图片加载失败的重试职责统一收敛在 `ArticleImageCacheService`：正文独立块级图片和后台预取的失败均登记并按 `1s/2s/4s` 退避重试，失败记录落盘到 `localCache`，全局刷新会在缓存清理完成后串行重扫。service 是唯一下载方；正文不再用 `?retry=N` 同时发起第二次请求，而是通过图片级 `ArticleImageRetryState` 显示「重新加载中…」或手动重试入口。service 成功后只递增该图片的 `successRevision`，精确重建这一张图片并从已填充缓存读取，不使用会连带刷新时间线的 `ArticleStateNotifier`。退避计数与计时器由可独立测试的 `ArticleImageRetryScheduler` 管理，清理文章缓存前会同步取消其排队任务和退避计时器。独立块级 SVG 同样进入此闭环；HTML 行内图片扩展和图片画廊仍不自动重试。
-- 代理 URL 问题不存在，无需修复：`HtmlChunk.normalizedImageUrl` 已经调用 `toProxiedUrl`，`_ArticleInlineImage` 使用的就是该值；重试始终沿用同一个规范化 URL 和文章级 cache key。
+- 重试始终沿用同一个规范化 URL 和文章级 cache key，不应为重试重复套代理或追加随机查询参数；但“代理 URL 相同”不代表响应格式等于嵌套源文件后缀。类型判断必须尊重明确的代理转换参数，避免 SVG 解码失败与普通缓存成功通知互相触发循环重建。
 
 视频：
 

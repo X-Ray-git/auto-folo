@@ -1376,7 +1376,7 @@
 
 决策：保留文章级 `SelectionArea`、`Column`、`flutter_html` 和既有链接/行内样式。只在 macOS/Android 的 `HtmlChunkCard` 文本型 chunk 渲染边界启用兼容路径：heading 与 paragraph 的解析包裹节点 inline；blockquote 去掉顶层 `p/div` 包裹并显式保留块间换行；list 把项目符号、序号和缩进写入同一个 selectable 文本流，并支持 `ol start`、`li value` 与嵌套列表。表格、代码和原始存储不改。没有采用零宽字符哨兵，因为实验确认不能修复 nested selectable；也没有 fork `flutter_html` 或禁用正文选择，因为当前可以用局部结构调整解决，且上游问题仍未关闭。
 
-后果：macOS 鼠标拖选和 Android 长按都返回真实正文，用户可继续使用系统复制；视觉结构只在已由 parser 分块的文本 chunk 中调整。自动测试覆盖六条真实交互路径，并按具体文字断言以排除 U+FFFC 假通过。后续升级 Flutter 或 `flutter_html` 时，可以用这些测试判断上游是否已修复；移除兼容层前还必须人工复核引用多段间距、列表符号/序号/嵌套缩进、链接和行内代码视觉，不能仅凭依赖版本变化删除。
+后果：macOS 鼠标拖选和 Android 长按都返回真实正文，用户可继续使用系统复制；视觉结构只在已由 parser 分块的文本 chunk 中调整。自动测试按具体文字断言以排除 U+FFFC 假通过。最初列表测试只使用 `<li>文字</li>`，遗漏了普遍存在的 `<li><p>文字</p></li>`，导致 marker 与块级 `p` 分行；同日补充 `SelectableHtmlCompatibility`，仅展开 `li` 的直属冗余 `p/div`，单段不加换行，多段保留两个 `<br>`，并覆盖自定义序号和嵌套列表。后续升级 Flutter 或 `flutter_html` 时，可以用这些测试判断上游是否已修复；移除兼容层前还必须人工复核引用多段间距、列表符号/序号/嵌套缩进、链接和行内代码视觉，不能仅凭依赖版本变化删除。
 
 <details class="dg-callout" open>
 <summary>不要回退</summary>
@@ -1394,6 +1394,14 @@
 决策：新增平台无关的 `ArticleOpenOrigin` 与 `ArticleNavigationPolicy`。只有相关文章本地路由携带 `related` 来源；从未读变为已读后，有返回回调时优先返回，否则沿用普通文章的下一篇逻辑。macOS 回调弹出内嵌路由，Android 回调弹出应用级路由。恢复未读、普通文章和外部原文链接不进入该分支，多层相关文章每次只弹一层。
 
 后果：两端共用产品语义和回归测试，同时保持各自符合平台结构的导航实现。以后增加其他“临时进入文章再返回”的来源时，不应直接冒充 `related`；先确认其标为已读后是否也应自动返回，再决定扩展来源枚举或单独策略。
+
+## 自动格式图片代理不能按嵌套源后缀选择解码器（2026-08-31）
+
+背景：oneusefulthing.org《Agency and Agents》的第一张图持续在“显示后立即重新加载”之间闪烁，后续普通图片正常。正式数据库只读快照显示该图是 Substack `/image/fetch/` 地址，路径末尾保留嵌套源 `.svg`，并带 `f_auto`；失败注册表只包含该图。使用与应用一致的请求头检查响应，服务端实际返回 `content-type: image/png` 和 `.png` 文件名。旧 `ArticleImageService.isSvg()` 只检查 URL path 后缀，正文因此用 `flutter_svg` 解码 PNG 并登记失败；后台预取或图片查看器用普通图片解码成功后又清除失败、推进 `successRevision`，正文重建后再次误用 SVG，形成闭环。
+
+决策：在共享 `ArticleImageService.isSvg()` 中先解析图片转换路径；任一路径参数明确包含 `f_auto` 时视为自动协商的栅格输出，不进入 SVG 解码器。直接 `.svg` 以及没有自动格式参数的 SVG 代理仍保留原 SVG 路径，不按站点标题、文章或订阅源添加特判。正文、图片查看器和视觉上下文筛选继续共用同一判断。
+
+后果：已落盘的失败记录无需迁移，下一次普通图片成功后会由既有成功通知清除；最多发生一次缓存重建，不再持续闪烁。同篇第三张相同结构图片同步受益。后续若出现其他“扩展名与响应格式不一致”的代理，应优先依据稳定转换参数或真实内容类型扩展共享分类，不要把某个域名整体视为位图，也不要取消真正 SVG 的文章级缓存路径。
 
 </script>
 <script src="../assets/wiki-common.js"></script>

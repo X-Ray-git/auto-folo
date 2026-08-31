@@ -74,7 +74,14 @@
 
 - 最小复现确认：文章级 `SelectionArea` 本身可用，失败只出现在 `flutter_html 3.0.0` 生成的块级 nested `RichText`；macOS 鼠标拖选返回空字符串，Android 长按可能返回 U+FFFC。只调整根 `html/body` 不能解决，扁平化 parser 已经分块后的冗余 wrapper 才能恢复真实文字选择。
 - 新增 6 项 widget 回归：macOS 段落、标题、引用、列表鼠标拖选，Android 段落和有序列表长按选择。测试断言具体正文词，不以非空选区代替正确性。定向测试全部通过；完整 `flutter test --no-pub` 共 279 项通过；`dart analyze lib test` 无 error/warning，仅保留 59 条既有 Liquid Glass `prefer_initializing_formals` info；`git diff --check` 通过。
+- 后续使用正式数据库只读快照确认《LLM Pricing Tracker | 2026.08》的无序列表和《The OpenAI Hack & the Question of Intent》的有序列表均使用标准 `<li><p>…</p></li>`。旧兼容层把 marker 放在 `li` 文本流、却保留块级 `p`，因此出现额外换行；这不是来源错误或 Flutter 直接改变间距，而是 Flutter 选择问题触发的本地兼容层覆盖不完整。现已集中展开 `li` 直属 `p/div`，保留多段、嵌套列表、链接、行内代码和自定义序号；完整测试共 288 项通过，静态分析无新增 error/warning。
 - 仍需正常使用中观察复杂引用和嵌套列表的视觉排版，尤其是多段引用间距、`ol start` / `li value` 序号、嵌套缩进、链接与行内代码。表格和代码块未进入本轮结构变换，原有选择和视觉行为应保持不变。
+
+## 2026-08-31 自动格式图片代理识别
+
+- 正式数据库只读快照确认《Agency and Agents》共有 6 张图，第一张失败记录对应带 `f_auto`、嵌套源后缀为 `.svg` 的 Substack 转换 URL；同篇第三张使用相同结构。使用生产请求头执行 HEAD，响应为 `200`、`content-type: image/png`，文件名同样为 `.png`，确认不是网络抖动或整篇正文重建。
+- `ArticleImageService.isSvg()` 现在排除路径变换参数中的 `f_auto`，其余直接 SVG 和无自动格式参数的 SVG 代理保持原行为。新增三项分类测试；图片成功通知、正文选择定向测试均通过；完整 `flutter test --no-pub` 共 291 项通过，`dart analyze lib test` 无新增 error/warning，仅有 59 条既有 Liquid Glass info，`git diff --check` 通过。
+- 用户已反馈后续图片原本正常；提交前仍需在真实文章视觉确认第一张不再持续闪烁、第三张稳定显示。旧失败记录会在第一次成功加载后自动清除，不需要人工删除缓存或修改数据库。
 
 ## 2026-08-24 全文与 AI 输入一致性
 

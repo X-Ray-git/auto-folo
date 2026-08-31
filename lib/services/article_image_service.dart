@@ -57,7 +57,22 @@ abstract final class ArticleImageService {
   }
 
   static bool isSvg(String imageUrl) {
-    final path = Uri.tryParse(imageUrl)?.path.toLowerCase() ?? '';
+    final uri = Uri.tryParse(imageUrl);
+    if (uri == null) return false;
+
+    // Image transformation CDNs can retain the nested source URL's `.svg`
+    // suffix while `f_auto` makes the response a negotiated raster format.
+    // Routing those responses through flutter_svg causes a failure/success
+    // retry loop when another loader correctly caches the PNG/WebP payload.
+    final usesAutomaticOutputFormat = uri.pathSegments.any(
+      (segment) => segment
+          .toLowerCase()
+          .split(',')
+          .any((directive) => directive == 'f_auto'),
+    );
+    if (usesAutomaticOutputFormat) return false;
+
+    final path = uri.path.toLowerCase();
     return path.endsWith('.svg');
   }
 }
