@@ -50,6 +50,12 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-08-31 macOS / Android 正文文本选择
+
+- 最小复现确认：文章级 `SelectionArea` 本身可用，失败只出现在 `flutter_html 3.0.0` 生成的块级 nested `RichText`；macOS 鼠标拖选返回空字符串，Android 长按可能返回 U+FFFC。只调整根 `html/body` 不能解决，扁平化 parser 已经分块后的冗余 wrapper 才能恢复真实文字选择。
+- 新增 6 项 widget 回归：macOS 段落、标题、引用、列表鼠标拖选，Android 段落和有序列表长按选择。测试断言具体正文词，不以非空选区代替正确性。定向测试全部通过；完整 `flutter test --no-pub` 共 279 项通过；`dart analyze lib test` 无 error/warning，仅保留 59 条既有 Liquid Glass `prefer_initializing_formals` info；`git diff --check` 通过。
+- 仍需正常使用中观察复杂引用和嵌套列表的视觉排版，尤其是多段引用间距、`ol start` / `li value` 序号、嵌套缩进、链接与行内代码。表格和代码块未进入本轮结构变换，原有选择和视觉行为应保持不变。
+
 ## 2026-08-24 全文与 AI 输入一致性
 
 - 本机数据库只读快照确认 philschmid.de《Recursive Self-Improvement》正文约 53K 字符；摘要请求使用约 16K 输入 token。第一次五段翻译在第 4 段最终失败，次日刷新后却出现仅 297 输入 token、49 字符输出的完成态译文，与“数据库保留全文但 Worker 使用刷新短快照”的代码路径完全对应。

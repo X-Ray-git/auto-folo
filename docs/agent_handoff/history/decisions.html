@@ -1354,6 +1354,23 @@
 - 不要把 Readability 网络/解析失败与正文选择断言合并成一个错误处理分支。
 </details>
 
+## 正文选择通过扁平化冗余 HTML 包裹兼容 Flutter 3.47（2026-08-31）
+
+背景：空 chunk 防线消除 `RenderParagraph` collapsed range 断言后，用户确认 macOS 正文仍无法用鼠标正常勾选。最小 widget 测试证明普通 `Text` 位于文章级 `SelectionArea` 时正常，而同一段非空文字经 `flutter_html 3.0.0` 渲染后，macOS 返回空选区，Android 长按只返回 U+FFFC。结构检查和逐级实验确认根因不是手势、快捷键或正文缓存，而是块级根节点产生的 leading `WidgetSpan` / nested selectable；只把 `html/body` 改为 inline 仍不够，所有冗余块包裹 inline 后才能恢复。该现象与 Flutter 已确认的 leading WidgetSpan 选择偏移问题一致（flutter/flutter#187506）。
+
+决策：保留文章级 `SelectionArea`、`Column`、`flutter_html` 和既有链接/行内样式。只在 macOS/Android 的 `HtmlChunkCard` 文本型 chunk 渲染边界启用兼容路径：heading 与 paragraph 的解析包裹节点 inline；blockquote 去掉顶层 `p/div` 包裹并显式保留块间换行；list 把项目符号、序号和缩进写入同一个 selectable 文本流，并支持 `ol start`、`li value` 与嵌套列表。表格、代码和原始存储不改。没有采用零宽字符哨兵，因为实验确认不能修复 nested selectable；也没有 fork `flutter_html` 或禁用正文选择，因为当前可以用局部结构调整解决，且上游问题仍未关闭。
+
+后果：macOS 鼠标拖选和 Android 长按都返回真实正文，用户可继续使用系统复制；视觉结构只在已由 parser 分块的文本 chunk 中调整。自动测试覆盖六条真实交互路径，并按具体文字断言以排除 U+FFFC 假通过。后续升级 Flutter 或 `flutter_html` 时，可以用这些测试判断上游是否已修复；移除兼容层前还必须人工复核引用多段间距、列表符号/序号/嵌套缩进、链接和行内代码视觉，不能仅凭依赖版本变化删除。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要通过删除文章级 `SelectionArea`、拦截 `Command-C` 或把 HTML 全部转成纯文本来规避框架问题。
+- 不要只断言“存在 SelectedContent”；Android 的对象替代符会让这种测试错误通过。
+- 不要把兼容转换前移到数据库规范化或 Markdown 导出层；它只属于 Flutter widget 选择结构。
+- 不要在没有运行跨平台选择测试和排版视觉检查时移除兼容路径。
+</details>
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>

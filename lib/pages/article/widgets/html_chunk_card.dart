@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -152,6 +153,12 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
   Widget? _cachedWidget;
   Brightness? _cachedBrightness;
   bool _codeCopied = false;
+
+  bool _usesHtmlSelectionWorkaround(BuildContext context) {
+    final platform = Theme.of(context).platform;
+    return platform == TargetPlatform.macOS ||
+        platform == TargetPlatform.android;
+  }
 
   @override
   void didUpdateWidget(covariant HtmlChunkCard oldWidget) {
@@ -367,6 +374,7 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
   // ── 标题 ──
 
   Widget _buildHeading(BuildContext context, ColorScheme cs) {
+    final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
     final fontSize = switch (widget.chunk.headingLevel) {
       1 => 24.0,
       2 => 20.0,
@@ -383,7 +391,13 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
       data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
+        // HtmlChunkParser 已经把标题拆成独立布局块。让文档根节点保持
+        // inline，避免 flutter_html 再生成一层以 WidgetSpan 开头的
+        // 空 RichText；该结构在 Flutter 3.47 的 macOS/Android 选择路径中
+        // 会返回空文本或 WidgetSpan 对象替代符。
+        if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
         'body': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
           fontSize: FontSize(fontSize),
           fontWeight: FontWeight.bold,
           color: cs.onSurface,
@@ -400,6 +414,7 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
   // ── 段落 ──
 
   Widget _buildParagraph(BuildContext context, ColorScheme cs) {
+    final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
     // 已经移除了之前错误的 \n\n 合并，此处不需要给不是段落的元素强制套 <p>
     // 但为了确保样式生效，如果没有外层标签可以套一个 div
     String htmlData = '<div>${widget.chunk.content}</div>';
@@ -410,7 +425,11 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
       data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
+        // 段落的块间距由 HtmlChunkCard._paddingForType 统一负责；这里的
+        // html/body/div 只是解析包裹层，不应再成为嵌套 WidgetSpan。
+        if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
         'body': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
           fontSize: FontSize(16),
           lineHeight: const LineHeight(1.7),
           color: cs.onSurface,
@@ -418,6 +437,7 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
           padding: HtmlPaddings.zero,
           textAlign: TextAlign.start,
         ),
+        if (usesSelectionWorkaround) 'div': Style(display: Display.inline),
         'p': Style(margin: Margins.zero, padding: HtmlPaddings.zero),
         'a': Style(color: cs.primary),
         'strong': Style(fontWeight: FontWeight.w700),
@@ -547,6 +567,14 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
   // ── 引用 ──
 
   Widget _buildBlockquote(BuildContext context, ColorScheme cs) {
+    final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
+    var htmlData = widget.chunk.content;
+    if (usesSelectionWorkaround) {
+      htmlData = _buildSelectableBlockHtml(htmlData);
+    }
+    if (Theme.of(context).brightness == Brightness.dark) {
+      htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
+    }
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
       decoration: BoxDecoration(
@@ -558,15 +586,12 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
         border: Border(left: BorderSide(color: cs.primary, width: 4)),
       ),
       child: Html(
-        data: Theme.of(context).brightness == Brightness.dark
-            ? HtmlContrastUtils.adjustHtmlContrast(
-                widget.chunk.content,
-                cs.surface,
-              )
-            : widget.chunk.content,
+        data: htmlData,
         onLinkTap: _handleLinkTap,
         style: {
+          if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
           'body': Style(
+            display: usesSelectionWorkaround ? Display.inline : null,
             fontSize: FontSize(15),
             lineHeight: const LineHeight(1.6),
             color: cs.onSurfaceVariant,
@@ -574,12 +599,31 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
             margin: Margins.zero,
             padding: HtmlPaddings.zero,
           ),
+          if (usesSelectionWorkaround) ...{
+            'div': Style(display: Display.inline),
+            'p': Style(display: Display.inline),
+          },
           'a': Style(color: cs.primary),
           'code': _inlineCodeStyle(),
         },
         extensions: _buildCommonExtensions(context, cs),
       ),
     );
+  }
+
+  String _buildSelectableBlockHtml(String html) {
+    final fragment = html_parser.parseFragment(html);
+    return fragment.nodes
+        .map((node) {
+          if (node is dom.Element) {
+            final tag = node.localName?.toLowerCase();
+            if (tag == 'p' || tag == 'div') return node.innerHtml;
+            return node.outerHtml;
+          }
+          return htmlEscape.convert(node.text ?? '');
+        })
+        .where((part) => part.trim().isNotEmpty)
+        .join('<br><br>');
   }
 
   // ── 表格 ──
@@ -696,11 +740,17 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
     if (Theme.of(context).brightness == Brightness.dark) {
       htmlData = HtmlContrastUtils.adjustHtmlContrast(htmlData, cs.surface);
     }
-    return Html(
+    final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
+    if (usesSelectionWorkaround) {
+      htmlData = _buildSelectableListHtml(htmlData);
+    }
+    final html = Html(
       data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
+        if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
         'body': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
           fontSize: FontSize(16),
           lineHeight: const LineHeight(1.5),
           color: cs.onSurface,
@@ -711,11 +761,75 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
         'strong': Style(fontWeight: FontWeight.w700),
         'em': Style(fontStyle: FontStyle.italic),
         'code': _inlineCodeStyle(),
-        'ul': Style(padding: HtmlPaddings.only(left: 20), margin: Margins.zero),
-        'ol': Style(padding: HtmlPaddings.only(left: 20), margin: Margins.zero),
+        'ul': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
+          padding: usesSelectionWorkaround
+              ? HtmlPaddings.zero
+              : HtmlPaddings.only(left: 20),
+          margin: Margins.zero,
+        ),
+        'ol': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
+          padding: usesSelectionWorkaround
+              ? HtmlPaddings.zero
+              : HtmlPaddings.only(left: 20),
+          margin: Margins.zero,
+        ),
+        if (usesSelectionWorkaround)
+          'li': Style(display: Display.inline, after: '\n'),
       },
       extensions: _buildCommonExtensions(context, cs),
     );
+    return usesSelectionWorkaround
+        ? Padding(padding: const EdgeInsets.only(left: 20), child: html)
+        : html;
+  }
+
+  String _buildSelectableListHtml(String html) {
+    final fragment = html_parser.parseFragment(html);
+
+    void addMarkers(dom.Element list, int depth) {
+      final ordered = list.localName?.toLowerCase() == 'ol';
+      var ordinal = int.tryParse(list.attributes['start'] ?? '') ?? 1;
+      final items = list.children
+          .where((child) => child.localName?.toLowerCase() == 'li')
+          .toList(growable: false);
+
+      for (final item in items) {
+        final explicitValue = int.tryParse(item.attributes['value'] ?? '');
+        if (explicitValue != null) ordinal = explicitValue;
+        final marker = ordered ? '${ordinal++}.' : '•';
+        final indent = List.filled(depth * 4, '\u00a0').join();
+        item.nodes.insert(0, dom.Text('$indent$marker '));
+
+        final nestedLists = item.children
+            .where((child) {
+              final tag = child.localName?.toLowerCase();
+              return tag == 'ul' || tag == 'ol';
+            })
+            .toList(growable: false);
+        for (final nested in nestedLists) {
+          final nestedIndex = item.nodes.indexOf(nested);
+          final previous = nestedIndex > 0 ? item.nodes[nestedIndex - 1] : null;
+          final alreadyStartsOnNewLine =
+              previous is dom.Element &&
+              previous.localName?.toLowerCase() == 'br';
+          if (!alreadyStartsOnNewLine) {
+            item.nodes.insert(nestedIndex, dom.Element.tag('br'));
+          }
+          addMarkers(nested, depth + 1);
+        }
+      }
+    }
+
+    for (final list in fragment.querySelectorAll('ul, ol').toList()) {
+      final parentTag = list.parent?.localName?.toLowerCase();
+      if (parentTag != 'li') addMarkers(list, 0);
+    }
+    return fragment.nodes.map((node) {
+      if (node is dom.Element) return node.outerHtml;
+      return htmlEscape.convert(node.text ?? '');
+    }).join();
   }
 
   // ── 分割线 ──
