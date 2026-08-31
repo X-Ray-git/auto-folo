@@ -1088,9 +1088,17 @@
 
 背景：大面积目录面板误用适合小控件的 shader，产生细网格纹理；时间线骨架屏缺少顶部 inset 埋入 AppBar。
 
-决策：仅文章目录面板显式改用 shader-free 原生 backdrop；`AppMobileGlassSheet` 默认仍保持既有 shader 路径，文章操作、设置选择器、图片菜单和订阅源设置等已验证面板不得被目录修复连带改变。提高未选中目录文字对比度；提取共享 `MobileViewportInsets` 供真实列表与所有骨架屏共用。主导航 body 位于 AppBar 后方时，初始内容 inset 必须包含状态栏和 `48px` 工具栏；独立 Scaffold 已由框架避开 AppBar，不重复增加。
+决策：仅文章目录面板显式改用 shader-free 原生 backdrop；`AppMobileGlassSheet` 默认仍保持既有 shader 路径，文章操作、设置选择器、图片菜单和订阅源设置等已验证面板不得被目录修复连带改变。提高未选中目录文字对比度；提取共享 `MobileViewportInsets` 供真实列表与所有骨架屏共用。主导航 body 位于 AppBar 后方时，初始内容 inset 必须包含状态栏和 `48px` 工具栏。独立 Scaffold 若未延伸到 AppBar 后方则不重复增加；若启用了 `extendBodyBehindAppBar`，必须从 Scaffold body 内部读取框架注入的完整 inset。
 
 后果：深浅色、长标题、滚动与 Android 性能一致，无复制魔法数字。
+
+## Android 独立阅读列表必须从 Scaffold body 读取顶部 inset（2026-08-31）
+
+背景：最近阅读作为订阅源下的二级路由，自己持有 `Scaffold + MobileBlurAppBar`；主时间线与主垃圾拦截则由主导航 shell 持有 AppBar。三者虽然共用 `MobileBlurAppBar`、`MobileEdgeFadeStack` 和 `MobileViewportInsets`，最近阅读却把 State 外层 context 传给列表构建函数。该 context 位于 Scaffold 之上，只含状态栏 padding，不含透明 AppBar 注入的完整高度，导致列表拉到顶端时第一张卡片停在 AppBar 后面。兼容用独立垃圾拦截路由存在同类风险。
+
+决策：最近阅读的成功列表通过 body 内的 `Builder` 取得正确 context；垃圾拦截把列表 body 改为接收 context 的构建函数，主导航内嵌模式继续使用 shell context，独立路由则通过 Scaffold body 的 `Builder` 传入 context。顶栏实例仍按导航归属分别持有，视觉参数继续集中在共享组件，不为修复新增页面专用高度或 padding。
+
+后果：最近阅读和独立垃圾拦截首项均完整避让状态栏与 `48px` AppBar，主导航路径不会发生双重 inset。以后新增 `extendBodyBehindAppBar` 的独立阅读列表时，禁止用 State.build 的外层 context 计算 `MobileViewportInsets`。
 
 ## Android 集中式触觉反馈策略
 

@@ -50,6 +50,13 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-08-31 Android 最近阅读顶部避让
+
+- 根因确认：最近阅读共用了顶栏视觉组件，但列表调用 `_buildListView(context)` 时传入的是独立 Scaffold 之上的 State context，只能读取状态栏 padding；透明 AppBar 的完整 inset 只存在于 Scaffold body context，因此第一张卡片拉到顶端后进入 AppBar 后方。
+- 最近阅读成功列表改由 body 内 `Builder` 提供 context；兼容用独立垃圾拦截路由同步修复，主导航内嵌垃圾拦截仍使用 shell context，不重复叠加工具栏高度。没有修改 AppBar 高度、渐隐参数、标题样式或导航结构。
+- 定向静态分析无问题；完整 `flutter test --no-pub` 共 286 项通过；Android Debug APK 构建成功；`git diff --check` 通过。构建仅保留 Gradle 8.14、AGP 8.11.1、Kotlin 2.2.20 的既有未来兼容性预警。
+- 用户已确认最近阅读拉到顶端时卡片起始位置符合预期。后续仍应保证独立垃圾拦截入口与主导航垃圾拦截首项位置一致。
+
 ## 2026-08-31 Android 普通视频切页暂停
 
 - 根因确认：Android 主导航的保留挂载 IndexedStack 在切换页签时不会 dispose 文章中的 `InlineVideoPlayer`，而普通 `video_player` 原先没有像 YouTube/Bilibili WebView 播放器那样监听路由可见性，因此不可见页仍可继续播放。

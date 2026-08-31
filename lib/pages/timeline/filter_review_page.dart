@@ -757,7 +757,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
   }
 
   Widget _buildMobileScaffold(BuildContext context, ColorScheme cs) {
-    final body = Obx(() {
+    Widget buildBody(BuildContext bodyContext) => Obx(() {
       final q = AutoFilterWorker.queuedCount.value;
       final p = AutoFilterWorker.processingCount.value;
       ArticleRelationService.recordsVersion.value;
@@ -775,11 +775,11 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
                 : ListView.builder(
                     padding: EdgeInsets.only(
                       top:
-                          MobileViewportInsets.listTopInset(context).top +
+                          MobileViewportInsets.listTopInset(bodyContext).top +
                           mobileEdgeListTopPadding,
                       bottom:
                           16 +
-                          MediaQuery.of(context).padding.bottom +
+                          MediaQuery.of(bodyContext).padding.bottom +
                           mobileEdgeBottomTransitionExtent +
                           (widget.embeddedInMainNavigation
                               ? kBottomNavigationBarHeight
@@ -850,7 +850,7 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
     });
 
     if (widget.embeddedInMainNavigation) {
-      return body;
+      return buildBody(context);
     }
 
     return Scaffold(
@@ -860,7 +860,10 @@ class _FilterReviewPageState extends State<FilterReviewPage> {
         clipBehavior: Clip.none,
         title: const FilterReviewStatusTitle(),
       ),
-      body: MobileEdgeFadeStack(child: body),
+      body: Builder(
+        builder: (bodyContext) =>
+            MobileEdgeFadeStack(child: buildBody(bodyContext)),
+      ),
     );
   }
 

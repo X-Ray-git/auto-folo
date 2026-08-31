@@ -169,7 +169,7 @@ class _RecentReadPageState extends State<RecentReadPage> {
         final content = switch (state) {
           Loading() => const Center(child: CircularProgressIndicator()),
           LoadError(:final errMsg) => Center(child: Text(errMsg ?? '加载失败')),
-          Success() => _buildListView(context),
+          Success() => Builder(builder: _buildListView),
         };
 
         if (Platform.isMacOS) {
@@ -201,9 +201,8 @@ class _RecentReadPageState extends State<RecentReadPage> {
               VerticalDivider(
                 width: 1,
                 thickness: 1,
-                color: Theme.of(
-                  context,
-                ).colorScheme.outlineVariant.withValues(alpha: 0.3),
+                color: Theme.of(context).colorScheme.outlineVariant
+                    .withValues(alpha: 0.3),
               ),
               Expanded(
                 child: Obx(() {
@@ -256,9 +255,8 @@ class _RecentReadPageState extends State<RecentReadPage> {
                   Icon(
                     Icons.history_rounded,
                     size: 48,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                    color: Theme.of(context).colorScheme.onSurfaceVariant
+                        .withValues(alpha: 0.5),
                   ),
                   const SizedBox(height: 16),
                   Text(

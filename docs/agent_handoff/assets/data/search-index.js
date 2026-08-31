@@ -1,5 +1,5 @@
 /* 由 scripts/docs-index.js 生成，随内容提交；阅读端零生成。 */
-window.WIKI_SEARCH_MANIFEST = "aa3862ee4ffdf7f8";
+window.WIKI_SEARCH_MANIFEST = "a4be955276a10fb5";
 window.WIKI_SEARCH_INDEX = [
  {
   "path": "architecture/networking.html",
@@ -3775,6 +3775,10 @@ window.WIKI_SEARCH_INDEX = [
     "text": "Android 目录面板用原生 backdrop，骨架共用完整 AppBar inset"
    },
    {
+    "id": "android-独立阅读列表必须从-scaffold-body-读取顶部-inset2026-08-31",
+    "text": "Android 独立阅读列表必须从 Scaffold body 读取顶部 inset（2026-08-31）"
+   },
+   {
     "id": "android-集中式触觉反馈策略",
     "text": "Android 集中式触觉反馈策略"
    },
@@ -4323,6 +4327,10 @@ window.WIKI_SEARCH_INDEX = [
   "title": "验证记录",
   "headings": [
    {
+    "id": "2026-08-31-android-最近阅读顶部避让",
+    "text": "2026-08-31 Android 最近阅读顶部避让"
+   },
+   {
     "id": "2026-08-31-android-普通视频切页暂停",
     "text": "2026-08-31 Android 普通视频切页暂停"
    },
@@ -4407,7 +4415,7 @@ window.WIKI_SEARCH_INDEX = [
     "text": "常规检查"
    }
   ],
-  "text": "验证记录 2026-08-31 Android 普通视频切页暂停 根因确认：Android 主导航的保留挂载 IndexedStack 在切换页签时不会 dispose 文章中的 InlineVideoPlayer ，而普通 video_player 原先没有像 YouTube/Bilibili WebView 播放器那样监听路由可见性，因此不可见页仍可继续播放。 共享普通播放器现同时处理 TickerMode 与应用 lifecycle；失活立即暂停且返回不自动续播，初始化期间离开页面也不会在完成后后台开播。自身全屏页有显式豁免，避免父路由 Ticker 关闭误停共享 controller；应用退到后台仍暂停。 新增 4 项策略测试，覆盖页签失活、自身全屏、全屏时退后台和前台可见四种状态；完整 flutter test --no-pub 共 286 项通过，Android Debug APK 构建成功。构建仅有 Gradle 8.14、AGP 8.11.1、Kotlin 2.2.20 的既有未来兼容性预警。 仍需 Android 真机确认：普通 Folo 视频播放中切换底部页签、进入其他路由、加载中立即离开及应用退后台均会暂停；返回后停在原位置；进入普通视频自己的全屏页不会被误停。YouTube/Bilibili 行为不应变化。 2026-08-31 Android 相关文章返回语义 Android 本地相关文章路由现在携带明确的 ArticleOpenOrigin.related ，右下角按钮将未读文章标为已读后弹出当前路由；普通文章仍沿用既有下一篇行为，恢复未读不触发导航。macOS 的嵌套详情返回复用同一策略，但继续使用自己的内嵌 Navigator 。 三项策略测试覆盖“相关文章返回且不前进”“普通文章无返回时前进”“恢复未读不导航”；完整 flutter test --no-pub 共 282 项通过，定向静态分析无问题， git diff --check 通过。 仍需 Android 真机确认：从原文章进入相关文章后，系统返回与右下角标为已读都能回到原文章且阅读位置保持；连续进入两层相关文章时每次只回一层；普通文章标为已读及已读文章恢复未读不发生意外返回。 2026-08-31 macOS / Android 正文文本选择 最小复现确认：文章级 SelectionArea 本身可用，失败只出现在 flutter_html 3.0.0 生成的块级 nested RichText ；macOS 鼠标拖选返回空字符串，Android 长按可能返回 U+FFFC。只调整根 html/body 不能解决，扁平化 parser 已经分块后的冗余 wrapper 才能恢复真实文字选择。 新增 6 项 widget 回归：macOS 段落、标题、引用、列表鼠标拖选，Android 段落和有序列表长按选择。测试断言具体正文词，不以非空选区代替正确性。定向测试全部通过；完整 flutter test --no-pub 共 279 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass prefer_initializing_formals info； git diff --check 通过。 仍需正常使用中观察复杂引用和嵌套列表的视觉排版，尤其是多段引用间距、 ol start / li value 序号、嵌套缩进、链接与行内代码。表格和代码块未进入本轮结构变换，原有选择和视觉行为应保持不变。 2026-08-24 全文与 AI 输入一致性 本机数据库只读快照确认 philschmid.de《Recursive Self-Improvement》正文约 53K 字符；摘要请求使用约 16K 输入 token。第一次五段翻译在第 4 段最终失败，次日刷新后却出现仅 297 输入 token、49 字符输出的完成态译文，与“数据库保留全文但 Worker 使用刷新短快照”的代码路径完全对应。 新增回归测试模拟队列只有一句话、数据库已有长全文且抓取成功标记存在，确认质量过滤、摘要和翻译三个 Worker 均收到持久化全文。 flutter test --no-pub 共 270 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass info。 历史错误短译文不会自动删除。该真实文章需在新版本中删除译文后重新生成，并确认重新进入五段长文翻译而不是单次短请求。 2026-08-24 Inbox 邮件通用展示清洗 定向测试覆盖 Circle 邮件、VentureBeat 风格 CTA、非 Inbox 反例、真实数据表与页内锚点，共 30 项通过；邮件按钮保留链接和文字但不保留原 CSS，图片明确像素尺寸继续保留。 flutter test --no-pub 共 269 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass prefer_initializing_formals info； git diff --check 通过；文档索引共 59 页、0 warnings。 仍需用户在真实 Inbox 文章中视觉确认：VentureBeat 的 Read More 等操作显示为普通可点击文本，CoderBill 原有操作和页脚链接仍可访问，普通订阅文章不发生视觉变化。 2026-08-23 摘要与质量过滤多模态转交 使用本机数据库的只读副本和用户现有私有 Prompt 对 5 篇真实文章做过冒烟测试，不修改正式数据库，也不把 Prompt 或正文写入仓库。样本覆盖无图片、普通多图、文字足以判断的图片文章和关键信息位于截图的短文本文章：无图文章保持纯文本；普通配图不会仅因存在而触发视觉请求；两篇图片主导样本均正确返回 needs_visual_context=true ，视觉阶段能够补出文字阶段缺失的图片事实；摘要与过滤仍各自独立判断。 自动测试覆盖共享图片顺序、去重、SVG 排除、8 张上限、文本充分时不转交、旧 Prompt 缺少字段时的兼容转交、视觉失败的摘要/过滤降级、摘要与过滤视觉模型配置的默认值/保存/独立重置，以及设置备份接受白名单和拒绝未知模型。 flutter test --no-pub 共 263 项通过。 dart analyze lib test 无 error/warning，仅保留 59 条仓库既有 Liquid Glass prefer_initializing_formals info； git diff --check 通过；文档索引共 59 页、0 warnings。 仍需用户在 macOS/Android 设置页视觉确认：普通模型与视觉模型选择控件风格一致；当前视觉模型控件可展开且只有一个选项；只读协议显示实际选择。外站图片若阻止 DeepSeek 服务端访问会进入既定安全降级，不应误删文章。另有一个独立性能观察：富含 HTML 标记和图"
+  "text": "验证记录 2026-08-31 Android 最近阅读顶部避让 根因确认：最近阅读共用了顶栏视觉组件，但列表调用 _buildListView(context) 时传入的是独立 Scaffold 之上的 State context，只能读取状态栏 padding；透明 AppBar 的完整 inset 只存在于 Scaffold body context，因此第一张卡片拉到顶端后进入 AppBar 后方。 最近阅读成功列表改由 body 内 Builder 提供 context；兼容用独立垃圾拦截路由同步修复，主导航内嵌垃圾拦截仍使用 shell context，不重复叠加工具栏高度。没有修改 AppBar 高度、渐隐参数、标题样式或导航结构。 定向静态分析无问题；完整 flutter test --no-pub 共 286 项通过；Android Debug APK 构建成功； git diff --check 通过。构建仅保留 Gradle 8.14、AGP 8.11.1、Kotlin 2.2.20 的既有未来兼容性预警。 用户已确认最近阅读拉到顶端时卡片起始位置符合预期。后续仍应保证独立垃圾拦截入口与主导航垃圾拦截首项位置一致。 2026-08-31 Android 普通视频切页暂停 根因确认：Android 主导航的保留挂载 IndexedStack 在切换页签时不会 dispose 文章中的 InlineVideoPlayer ，而普通 video_player 原先没有像 YouTube/Bilibili WebView 播放器那样监听路由可见性，因此不可见页仍可继续播放。 共享普通播放器现同时处理 TickerMode 与应用 lifecycle；失活立即暂停且返回不自动续播，初始化期间离开页面也不会在完成后后台开播。自身全屏页有显式豁免，避免父路由 Ticker 关闭误停共享 controller；应用退到后台仍暂停。 新增 4 项策略测试，覆盖页签失活、自身全屏、全屏时退后台和前台可见四种状态；完整 flutter test --no-pub 共 286 项通过，Android Debug APK 构建成功。构建仅有 Gradle 8.14、AGP 8.11.1、Kotlin 2.2.20 的既有未来兼容性预警。 仍需 Android 真机确认：普通 Folo 视频播放中切换底部页签、进入其他路由、加载中立即离开及应用退后台均会暂停；返回后停在原位置；进入普通视频自己的全屏页不会被误停。YouTube/Bilibili 行为不应变化。 2026-08-31 Android 相关文章返回语义 Android 本地相关文章路由现在携带明确的 ArticleOpenOrigin.related ，右下角按钮将未读文章标为已读后弹出当前路由；普通文章仍沿用既有下一篇行为，恢复未读不触发导航。macOS 的嵌套详情返回复用同一策略，但继续使用自己的内嵌 Navigator 。 三项策略测试覆盖“相关文章返回且不前进”“普通文章无返回时前进”“恢复未读不导航”；完整 flutter test --no-pub 共 282 项通过，定向静态分析无问题， git diff --check 通过。 仍需 Android 真机确认：从原文章进入相关文章后，系统返回与右下角标为已读都能回到原文章且阅读位置保持；连续进入两层相关文章时每次只回一层；普通文章标为已读及已读文章恢复未读不发生意外返回。 2026-08-31 macOS / Android 正文文本选择 最小复现确认：文章级 SelectionArea 本身可用，失败只出现在 flutter_html 3.0.0 生成的块级 nested RichText ；macOS 鼠标拖选返回空字符串，Android 长按可能返回 U+FFFC。只调整根 html/body 不能解决，扁平化 parser 已经分块后的冗余 wrapper 才能恢复真实文字选择。 新增 6 项 widget 回归：macOS 段落、标题、引用、列表鼠标拖选，Android 段落和有序列表长按选择。测试断言具体正文词，不以非空选区代替正确性。定向测试全部通过；完整 flutter test --no-pub 共 279 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass prefer_initializing_formals info； git diff --check 通过。 仍需正常使用中观察复杂引用和嵌套列表的视觉排版，尤其是多段引用间距、 ol start / li value 序号、嵌套缩进、链接与行内代码。表格和代码块未进入本轮结构变换，原有选择和视觉行为应保持不变。 2026-08-24 全文与 AI 输入一致性 本机数据库只读快照确认 philschmid.de《Recursive Self-Improvement》正文约 53K 字符；摘要请求使用约 16K 输入 token。第一次五段翻译在第 4 段最终失败，次日刷新后却出现仅 297 输入 token、49 字符输出的完成态译文，与“数据库保留全文但 Worker 使用刷新短快照”的代码路径完全对应。 新增回归测试模拟队列只有一句话、数据库已有长全文且抓取成功标记存在，确认质量过滤、摘要和翻译三个 Worker 均收到持久化全文。 flutter test --no-pub 共 270 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass info。 历史错误短译文不会自动删除。该真实文章需在新版本中删除译文后重新生成，并确认重新进入五段长文翻译而不是单次短请求。 2026-08-24 Inbox 邮件通用展示清洗 定向测试覆盖 Circle 邮件、VentureBeat 风格 CTA、非 Inbox 反例、真实数据表与页内锚点，共 30 项通过；邮件按钮保留链接和文字但不保留原 CSS，图片明确像素尺寸继续保留。 flutter test --no-pub 共 269 项通过； dart analyze lib test 无 error/warning，仅保留 59 条既有 Liquid Glass prefer_initializing_formals info； git diff --check 通过；文档索引共 59 页、0 warnings。 仍需用户在真实 Inbox 文章中视觉确认：VentureBeat 的 Read More 等操作显示为普通可点击文本，CoderBill 原有操作和页脚链接仍可访问，普通订阅文章不发生视觉变化。 2026-08-23 摘要与质量过滤多模态转交 使用本机数据库的只读副本和用户现有私有 Prompt 对 5 篇真实文章做过冒烟测试，不修改正式数据库，也不把 Prompt 或正文写入仓库。样本覆盖无图片、普通多图、文字足以判断的图片文章和关键信息位于截图的短文本文章：无图文章保持纯文"
  },
  {
   "path": "index.html",
