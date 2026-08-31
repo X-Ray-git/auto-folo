@@ -13,6 +13,17 @@ import 'article_video_playback_shortcut.dart';
 import 'fullscreen_video_page.dart';
 import 'media_play_button.dart';
 
+abstract final class InlineVideoPlaybackVisibility {
+  static bool shouldPause({
+    required bool tickerEnabled,
+    required bool fullscreenActive,
+    required AppLifecycleState lifecycleState,
+  }) {
+    return lifecycleState != AppLifecycleState.resumed ||
+        (!tickerEnabled && !fullscreenActive);
+  }
+}
+
 /// 普通视频播放错误的分类。
 enum _InlineVideoErrorKind { none, authExpiry, generic }
 
@@ -36,7 +47,8 @@ class InlineVideoPlayer extends StatefulWidget {
   State<InlineVideoPlayer> createState() => _InlineVideoPlayerState();
 }
 
-class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
+class _InlineVideoPlayerState extends State<InlineVideoPlayer>
+    with WidgetsBindingObserver {
   VideoPlayerController? _controller;
   bool _isInitializing = false;
   bool _hasError = false;
@@ -44,9 +56,22 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
   bool _showControls = true;
   Timer? _hideTimer;
   final FocusNode _focusNode = FocusNode();
+  bool _tickerEnabled = true;
+  bool _fullscreenActive = false;
+  bool _pauseInProgress = false;
+  late AppLifecycleState _lifecycleState;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ArticleVideoPlaybackShortcut.deactivate(this);
     _focusNode.dispose();
     _hideTimer?.cancel();
@@ -54,6 +79,43 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       ?..removeListener(_onControllerUpdate)
       ..dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+    if (_shouldPausePlayback) {
+      unawaited(_pauseForInactivity());
+    }
+  }
+
+  bool get _shouldPausePlayback => InlineVideoPlaybackVisibility.shouldPause(
+    tickerEnabled: _tickerEnabled,
+    fullscreenActive: _fullscreenActive,
+    lifecycleState: _lifecycleState,
+  );
+
+  Future<void> _pauseForInactivity() async {
+    ArticleVideoPlaybackShortcut.deactivate(this);
+    _hideTimer?.cancel();
+
+    final controller = _controller;
+    if (_pauseInProgress ||
+        controller == null ||
+        !controller.value.isInitialized ||
+        !controller.value.isPlaying) {
+      return;
+    }
+
+    _pauseInProgress = true;
+    try {
+      await controller.pause();
+      if (mounted && identical(_controller, controller)) {
+        setState(() => _showControls = true);
+      }
+    } finally {
+      _pauseInProgress = false;
+    }
   }
 
   void _onControllerUpdate() {
@@ -82,11 +144,16 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       ArticleVideoPlaybackShortcut.deactivate(this);
     }
 
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => FullscreenVideoPage(controller: _controller!),
-      ),
-    );
+    _fullscreenActive = true;
+    try {
+      await Navigator.of(context, rootNavigator: true).push(
+        MaterialPageRoute(
+          builder: (_) => FullscreenVideoPage(controller: _controller!),
+        ),
+      );
+    } finally {
+      _fullscreenActive = false;
+    }
 
     if (mounted &&
         shouldRestoreActivePlayer &&
@@ -113,6 +180,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       final uri = Uri.tryParse(widget.videoUrl);
       if (uri == null) {
         setState(() {
+          _isInitializing = false;
           _hasError = true;
           _errorKind = _InlineVideoErrorKind.generic;
         });
@@ -126,11 +194,15 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       await controller.setLooping(false);
       if (!mounted || !identical(_controller, controller)) return;
       controller.addListener(_onControllerUpdate);
+      if (_shouldPausePlayback) {
+        setState(() => _isInitializing = false);
+        return;
+      }
       await controller.play();
       if (!mounted || !identical(_controller, controller)) return;
       _activatePlaybackShortcut();
       _focusNode.requestFocus();
-      setState(() {});
+      setState(() => _isInitializing = false);
       _startHideTimer();
     } catch (e) {
       if (!mounted) return;
@@ -138,11 +210,13 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
       // 其余播放错误走通用文案。
       final errorText = _controller?.value.errorDescription ?? e.toString();
       setState(() {
+        _isInitializing = false;
         _hasError = true;
         _errorKind = _isAuthOrSignatureExpiry(errorText)
             ? _InlineVideoErrorKind.authExpiry
             : _InlineVideoErrorKind.generic;
       });
+      _controller?.removeListener(_onControllerUpdate);
       _controller?.dispose();
       _controller = null;
     }
@@ -194,6 +268,14 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final tickerEnabled = TickerMode.valuesOf(context).enabled;
+    if (_tickerEnabled != tickerEnabled) {
+      _tickerEnabled = tickerEnabled;
+      if (_shouldPausePlayback) {
+        unawaited(_pauseForInactivity());
+      }
+    }
+
     final cs = Theme.of(context).colorScheme;
 
     // 正在播放或已就绪 → 显示视频

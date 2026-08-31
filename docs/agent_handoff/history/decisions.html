@@ -1279,6 +1279,14 @@
 - 不要在下层路由重新可见时自动续播。
 </details>
 
+## 普通视频也按页面可见性暂停（2026-08-31）
+
+背景：Android 主 shell 用保留挂载的 IndexedStack 保存各页状态。用户从正在播放普通 Folo 视频的文章切到其他主导航页时，文章 widget 不会 dispose，旧播放器只在 dispose 中释放 controller，因而视频会继续在不可见页面播放。macOS 当前导航结构较容易触发原有清理，所以没有稳定暴露同一现象，但生命周期缺口属于共享播放器。
+
+决策：`InlineVideoPlayer` 同时观察 `TickerMode.valuesOf(context).enabled` 与 `AppLifecycleState`。路由/页签失活或应用退到后台时主动暂停、取消控制栏计时并释放全局播放快捷键；返回页面后不自动续播。初始化完成前若页面已经失活，不调用 play。普通全屏页与 inline 复用同一个 `VideoPlayerController`，因此用显式 fullscreen 状态豁免父路由 Ticker 关闭导致的暂停；应用退到后台仍优先暂停。
+
+后果：Android 切页不再漏出普通视频声音，macOS 获得同样的防护；导航状态仍被保留，返回后可从原位置手动继续。不要改回只依赖 dispose，也不要在恢复可见时自动播放。
+
 ## Flutter 3.47.0 工具链与 macOS 12 最低版本（2026-08-16）
 
 背景：本机 stable Flutter 从 `3.44.6` 升级到 `3.47.0` / Dart `3.13.0` 后，旧锁文件在 `--enforce-lockfile` 下无法解析；新分析器还发现认证服务在 `try` 内直接返回 Future 的两处 warning。Flutter 构建工具同时要求把 macOS deployment target 从 `10.15` 提升到 `12.0`。

@@ -119,6 +119,7 @@
 - inline player 和全屏 player 都支持空格播放/暂停，但同一时刻只能由当前可见播放器处理全局按键。
 - 普通 inline video 与 YouTube 自定义播放器共用 `ArticleVideoPlaybackShortcut`：开始播放或点击播放器会把它设为当前播放器，裸 `Space`/媒体播放键在文章其他区域仍控制当前播放器；切到另一播放器时转移归属，widget dispose 时释放。YouTube 的 WKWebView 焦点内外会走同一通道并做短时间去重，不得再分别维护两套全局快捷键。
 - 播放器页面被关闭（Esc/路由弹出）或路由被覆盖（从文章进入相关文章，下层路由保留在栈中）时必须停止 WebView 内的播放：`ShakaEmbedPlayer` 与 `WebEmbedVideoPlayer` 在 dispose 时对页面内全部 `video` 执行 `pause()`，并通过 `TickerMode.valuesOf(context).enabled` 监听路由覆盖（ModalRoute 会关闭非当前路由的 Ticker）主动暂停。若平台 view 销毁延迟导致 dispose 后 WebView 仍存活，dispose 里的 runJavaScript 仍能命中它；相关文章返回后不自动续播。
+- 普通 `InlineVideoPlayer` 遵循同一可见性语义：Android 主导航通过保留挂载的 IndexedStack 切页时不会触发 dispose，因此必须同时观察 `TickerMode` 和应用 lifecycle；页面失活、路由被覆盖或应用进入后台都立即暂停并释放全局播放快捷键，返回后不自动续播。初始化中的视频若在网络完成前已失活，也不得在后台开始播放。
 - 进入全屏前，inline player 如果是 `activePlayer`，应暂时释放该身份；全屏页在首帧后请求焦点并接管空格。退出全屏后，inline player 再恢复 `activePlayer` 和焦点。
 - 普通视频全屏页与图片画廊必须通过 root navigator 打开，避免 macOS 分栏详情区的嵌套路由把全屏内容限制在右栏。YouTube/Bilibili 的 WebView 元素全屏继续由系统原生全屏能力接管，不走 Flutter 嵌套路由。
 - 不要让 inline 与全屏页面同时响应同一次空格事件，否则可能发生连续切换两次、视觉上像“空格无效”。也不要在全屏 widget 尚未挂载完成前同步请求焦点。
@@ -130,6 +131,7 @@
 - 普通视频和 YouTube 播放前共用 `MediaPlayButton`：macOS hover 使用手指光标；点击后按钮保持 `64x64`，只把图标替换为转圈。初始化状态必须立即 `setState`，避免网络较慢时用户误以为没有点击成功。
 - `AnimatedOpacity` 不会自动停止命中测试。inline 与全屏视频控制栏隐藏时必须同时 `IgnorePointer`，否则不可见的全屏/退出按钮仍会拦截角落点击。
 - inline 与全屏普通视频的 `VideoProgressIndicator` 均已启用 `allowScrubbing: true`。`video_player` 内部支持点击定位和水平拖拽：拖动开始时暂时暂停，拖动中连续 seek，结束后按拖动前状态恢复。两处进度条都用 `MouseRegion(SystemMouseCursors.click)` 提示可交互；YouTube 进度条由 WebView/YouTube 自己管理。
+- inline 与全屏普通视频复用同一个 controller。进入该视频自己的 `FullscreenVideoPage` 时，父文章路由的 Ticker 虽然会关闭，但必须由显式 fullscreen 状态豁免暂停；应用真正进入后台时仍应暂停。不要用无条件的 `!TickerMode => pause` 破坏全屏连续播放。
 
 ## macOS 全屏视频
 

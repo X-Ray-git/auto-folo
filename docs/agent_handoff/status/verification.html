@@ -50,6 +50,13 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-08-31 Android 普通视频切页暂停
+
+- 根因确认：Android 主导航的保留挂载 IndexedStack 在切换页签时不会 dispose 文章中的 `InlineVideoPlayer`，而普通 `video_player` 原先没有像 YouTube/Bilibili WebView 播放器那样监听路由可见性，因此不可见页仍可继续播放。
+- 共享普通播放器现同时处理 TickerMode 与应用 lifecycle；失活立即暂停且返回不自动续播，初始化期间离开页面也不会在完成后后台开播。自身全屏页有显式豁免，避免父路由 Ticker 关闭误停共享 controller；应用退到后台仍暂停。
+- 新增 4 项策略测试，覆盖页签失活、自身全屏、全屏时退后台和前台可见四种状态；完整 `flutter test --no-pub` 共 286 项通过，Android Debug APK 构建成功。构建仅有 Gradle 8.14、AGP 8.11.1、Kotlin 2.2.20 的既有未来兼容性预警。
+- 仍需 Android 真机确认：普通 Folo 视频播放中切换底部页签、进入其他路由、加载中立即离开及应用退后台均会暂停；返回后停在原位置；进入普通视频自己的全屏页不会被误停。YouTube/Bilibili 行为不应变化。
+
 ## 2026-08-31 Android 相关文章返回语义
 
 - Android 本地相关文章路由现在携带明确的 `ArticleOpenOrigin.related`，右下角按钮将未读文章标为已读后弹出当前路由；普通文章仍沿用既有下一篇行为，恢复未读不触发导航。macOS 的嵌套详情返回复用同一策略，但继续使用自己的内嵌 `Navigator`。

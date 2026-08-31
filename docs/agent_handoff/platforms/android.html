@@ -81,6 +81,7 @@ Android 正在按现有 macOS 设计语言做类比迁移，但不是照搬 AppK
 - Android 滚动阅读页的顶部渐隐以 AppBar 下边缘为坐标基准：从屏幕顶端到下边缘上方 `24px` 保持背景色 `85%` 不透明度，平滑经过下边缘下方 `4px` 的 `45%`，再至下方 `32px` 降为透明。三处关键值与范围保持不变，但连接曲线必须严格单调且在起点平滑进入，不能重新使用两段线性渐变，否则恒定区与下降区的斜率突变会形成横向硬接缝。列表顶部只额外留 `2px`，与文章卡片自身 `6px` 外边距共同形成约 `8px` 的视觉安全距离。实现必须同时考虑 `extendBodyBehindAppBar` 注入后的 `MediaQuery.padding.top` 和原始 `viewPadding`，否则状态栏高度会被重复计算或丢失。
 - 文章卡片列表的底部渐隐长度为 `24px`，边缘最大背景不透明度为 `65%`；文章正文不使用底部渐隐。顶部搜索、范围、返回和订阅源设置等圆形工具按钮通过 `nativeBackdrop` 直接采样其下滚动内容，外阴影只允许绘制在圆形轮廓之外，不能透入按钮内部造成发灰。透明 AppBar 必须允许这些阴影越界绘制，不能在工具栏下沿裁切；同时必须设置 `forceMaterialTransparency`，否则 AppBar 的透明 `MaterialType.canvas` 仍会在渐变中部形成一条横向合成色带。需要实体毛玻璃的设置页等 header 不启用该选项。
 - 文章动作和图片查看器底部菜单已迁移到共享玻璃面板；搜索、订阅源详情和订阅列表的空态已去掉旧式巨大彩色圆形。文章卡片等高频元素继续保持轻量，不因次级页面迁移增加实时模糊。
+- 主导航使用保留各页状态的 IndexedStack，切换页签不会销毁文章页。普通 Folo 视频因此不能只依赖 widget dispose 停止：共享 `InlineVideoPlayer` 会在当前 TickerMode 失活或应用退到后台时暂停，返回后保持暂停；进入它自己的全屏页则继续复用 controller 播放。YouTube/Bilibili 继续走既有 WebView 生命周期路径。
 
 已修复的响应式陷阱：
 
@@ -107,6 +108,7 @@ Android 正在按现有 macOS 设计语言做类比迁移，但不是照搬 AppK
 - 设置导入/导出和文章图片预取仍正常。
 - 设置页所有选择字段的浮动标签完整，玻璃选择面板不会与背后内容混在一起；选择立即保存。字段层已不裁剪 `InputDecorator`；卡片层（`_LlmConfigCard` 的 `ExpansionTile` children padding 顶部）也已为 `OutlineInputBorder` 向上越出的浮动 label 预留 `10px` 缓冲，详见 `history/decisions.md`。
 - 普通次级页面 header 高度统一为 `48px`，正文顶部避让同步，没有残留旧 `56px` 空白。
+- 播放一段普通 Folo 视频后切换到底部任一其他页签，声音和画面应立即暂停；返回文章后停在原位置且不自动续播。加载尚未完成时立即离开，也不得在稍后后台响起。进入普通视频全屏则应连续播放，应用退到后台时仍暂停。
 
 </script>
 <script src="../assets/wiki-common.js"></script>
