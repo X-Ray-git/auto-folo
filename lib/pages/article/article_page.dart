@@ -47,6 +47,7 @@ import '../../utils/html_chunk_parser.dart';
 import '../../utils/storage.dart';
 import '../../services/undo_service.dart';
 import '../timeline/timeline_controller.dart';
+import 'article_navigation.dart';
 import 'widgets/html_chunk_card.dart';
 
 import 'package:flutter_html/flutter_html.dart';
@@ -610,11 +611,13 @@ class _ArticleRouteRequest {
   final ArticleModel article;
   final List<ArticleModel>? sequence;
   final int index;
+  final ArticleOpenOrigin origin;
 
   const _ArticleRouteRequest({
     required this.article,
     this.sequence,
     this.index = 0,
+    this.origin = ArticleOpenOrigin.standard,
   });
 
   bool get hasSequence => sequence != null && sequence!.length > 1;
@@ -628,6 +631,7 @@ class _ArticleRouteRequest {
       final article = arguments['article'];
       final sequence = arguments['sequence'];
       final index = arguments['index'];
+      final origin = arguments['origin'];
       if (article is ArticleModel) {
         final items = sequence is List<ArticleModel> ? sequence : null;
         final safeIndex = index is int && index >= 0
@@ -637,6 +641,9 @@ class _ArticleRouteRequest {
           article: article,
           sequence: items,
           index: safeIndex,
+          origin: origin is ArticleOpenOrigin
+              ? origin
+              : ArticleOpenOrigin.standard,
         );
       }
     }
@@ -670,7 +677,12 @@ class ArticlePage extends StatelessWidget {
     if (request.sequence != null && request.sequence!.length > 1) {
       return _ArticlePagerPage(request: request);
     }
-    return ArticlePageView(article: request.article);
+    return ArticlePageView(
+      article: request.article,
+      onMarkedReadAndReturn: request.origin == ArticleOpenOrigin.related
+          ? () => Get.back<void>()
+          : null,
+    );
   }
 }
 
@@ -780,7 +792,7 @@ class _MacArticleDetailStackState extends State<MacArticleDetailStack> {
           isSplitView: true,
           isActive: widget.isActive,
           onClose: _popRelatedArticle,
-          onMarkedReadByShortcut: _popRelatedArticle,
+          onMarkedReadAndReturn: _popRelatedArticle,
           onOpenSource: widget.onOpenSource,
           onOpenRelatedArticle: _openRelatedArticle,
         ),
@@ -843,7 +855,7 @@ class ArticlePageView extends StatefulWidget {
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback? onMKeyPressed;
-  final VoidCallback? onMarkedReadByShortcut;
+  final VoidCallback? onMarkedReadAndReturn;
   final VoidCallback? onMisclassifyKeyPressed;
   final VoidCallback? onOpenOriginalAndMarkRead;
   final bool Function()? isActive;
@@ -866,7 +878,7 @@ class ArticlePageView extends StatefulWidget {
     this.onPrevious,
     this.onNext,
     this.onMKeyPressed,
-    this.onMarkedReadByShortcut,
+    this.onMarkedReadAndReturn,
     this.onMisclassifyKeyPressed,
     this.onOpenOriginalAndMarkRead,
     this.isActive,
@@ -1224,12 +1236,11 @@ class _ArticlePageViewState extends State<ArticlePageView> {
       if (controller.isUpdatingReadState.value) return true;
       final wasUnread = !controller.isRead.value;
       _toggleReadState();
-      if (wasUnread) {
-        widget.onMarkedReadByShortcut?.call();
-      }
-      if (wasUnread && widget.onNext != null) {
-        widget.onNext!();
-      }
+      ArticleNavigationPolicy.afterMarkedRead(
+        wasUnread: wasUnread,
+        returnToPrevious: widget.onMarkedReadAndReturn,
+        goNext: widget.onNext,
+      );
       return true;
     }
 
@@ -2204,7 +2215,12 @@ class _ArticlePageViewState extends State<ArticlePageView> {
                                 widget.onMKeyPressed!();
                               } else {
                                 controller.markAsRead();
-                                widget.onNext?.call();
+                                ArticleNavigationPolicy.afterMarkedRead(
+                                  wasUnread: true,
+                                  returnToPrevious:
+                                      widget.onMarkedReadAndReturn,
+                                  goNext: widget.onNext,
+                                );
                               }
                             },
                     ),
@@ -3200,7 +3216,10 @@ class _ArticleRelationsSection extends StatelessWidget {
       }
       await Get.toNamed(
         Routes.article,
-        arguments: localArticle,
+        arguments: {
+          'article': localArticle,
+          'origin': ArticleOpenOrigin.related,
+        },
         preventDuplicates: false,
       );
       return;

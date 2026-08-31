@@ -1371,6 +1371,14 @@
 - 不要在没有运行跨平台选择测试和排版视觉检查时移除兼容路径。
 </details>
 
+## 相关文章返回共享业务策略，不共享平台导航容器（2026-08-31）
+
+背景：macOS 相关文章使用右侧详情栏内的嵌套 `Navigator`，以保留上一篇文章的 widget、滚动位置和显示状态；Android 已通过 `Get.toNamed(Routes.article)` 使用应用级路由，系统返回本来就能恢复上一文章，但右下角标为已读不会像 macOS 的 `M` 一样自动返回。若分别复制“是否返回或前进”的判断，两个入口容易再次产生语义差异；若强行共用 Navigator，则会把分栏与全屏两种结构耦合。
+
+决策：新增平台无关的 `ArticleOpenOrigin` 与 `ArticleNavigationPolicy`。只有相关文章本地路由携带 `related` 来源；从未读变为已读后，有返回回调时优先返回，否则沿用普通文章的下一篇逻辑。macOS 回调弹出内嵌路由，Android 回调弹出应用级路由。恢复未读、普通文章和外部原文链接不进入该分支，多层相关文章每次只弹一层。
+
+后果：两端共用产品语义和回归测试，同时保持各自符合平台结构的导航实现。以后增加其他“临时进入文章再返回”的来源时，不应直接冒充 `related`；先确认其标为已读后是否也应自动返回，再决定扩展来源枚举或单独策略。
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>

@@ -50,6 +50,12 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-08-31 Android 相关文章返回语义
+
+- Android 本地相关文章路由现在携带明确的 `ArticleOpenOrigin.related`，右下角按钮将未读文章标为已读后弹出当前路由；普通文章仍沿用既有下一篇行为，恢复未读不触发导航。macOS 的嵌套详情返回复用同一策略，但继续使用自己的内嵌 `Navigator`。
+- 三项策略测试覆盖“相关文章返回且不前进”“普通文章无返回时前进”“恢复未读不导航”；完整 `flutter test --no-pub` 共 282 项通过，定向静态分析无问题，`git diff --check` 通过。
+- 仍需 Android 真机确认：从原文章进入相关文章后，系统返回与右下角标为已读都能回到原文章且阅读位置保持；连续进入两层相关文章时每次只回一层；普通文章标为已读及已读文章恢复未读不发生意外返回。
+
 ## 2026-08-31 macOS / Android 正文文本选择
 
 - 最小复现确认：文章级 `SelectionArea` 本身可用，失败只出现在 `flutter_html 3.0.0` 生成的块级 nested `RichText`；macOS 鼠标拖选返回空字符串，Android 长按可能返回 U+FFFC。只调整根 `html/body` 不能解决，扁平化 parser 已经分块后的冗余 wrapper 才能恢复真实文字选择。
