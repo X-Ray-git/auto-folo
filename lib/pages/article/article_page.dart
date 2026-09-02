@@ -785,12 +785,8 @@ class _MacArticleDetailStackState extends State<MacArticleDetailStack> {
     widget.onRelatedNavigationChanged?.call(true);
     final popped = navigator.push<void>(
       PageRouteBuilder<void>(
-        // This route replaces the whole detail surface. Fading the complete
-        // page while the destination starts parsing its content exposes the
-        // old page and the loading state in the same transition, which looks
-        // like a flash on macOS.
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
+        transitionDuration: const Duration(milliseconds: 160),
+        reverseTransitionDuration: const Duration(milliseconds: 140),
         pageBuilder: (_, _, _) => ArticlePageView(
           article: article,
           isSplitView: true,
@@ -800,10 +796,48 @@ class _MacArticleDetailStackState extends State<MacArticleDetailStack> {
           onOpenSource: widget.onOpenSource,
           onOpenRelatedArticle: _openRelatedArticle,
         ),
-        // Keep the route transition-free so the destination is painted as a
-        // single surface instead of crossfading two independently-built
-        // ArticlePageView trees.
-        transitionsBuilder: (_, _, _, child) => child,
+        transitionsBuilder: (context, animation, _, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          final fade = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            // easeInCubic drops the opacity too quickly when the route
+            // animation runs from 1 back to 0. Keep the return fade smooth
+            // while the page surface slides away and reveals the mounted
+            // previous article.
+            reverseCurve: Curves.easeInOutCubic,
+          );
+          final slide = Tween<Offset>(
+            begin: const Offset(0.025, 0),
+            end: Offset.zero,
+          ).animate(curved);
+          final fadedChild = FadeTransition(opacity: fade, child: child);
+
+          return AnimatedBuilder(
+            animation: animation,
+            child: fadedChild,
+            builder: (context, child) {
+              final isPopping = animation.status == AnimationStatus.reverse;
+
+              // During entry the opaque surface prevents the old page from
+              // bleeding through the destination's parsing/loading state.
+              // During exit the surface must be removed from the stack: the
+              // mounted previous article should be revealed directly instead
+              // of showing a temporary blank/dim surface between both pages.
+              final foreground = isPopping
+                  ? child!
+                  : ColoredBox(
+                      color: Theme.of(context).colorScheme.surface,
+                      child: child,
+                    );
+              return SlideTransition(position: slide, child: foreground);
+            },
+          );
+        },
       ),
     );
     popped.whenComplete(() {

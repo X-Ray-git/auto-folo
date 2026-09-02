@@ -52,12 +52,23 @@
 
 ## 2026-09-02 macOS 相关文章详情切换闪烁
 
+> 本节记录 2026-09-02 为隔离闪烁根因采用的阶段性零时长稳定化；2026-09-03 已恢复受控的内容过渡，当前实现和最终验证见下方记录。
+
 - 用户现象：从文章内点击关联文章时，右侧详情在切换过程中出现闪烁；从相关文章按 `Esc` 返回，或按 `M` 标记已读并自动返回时也出现闪烁。
 - 代码定位：macOS 使用 `MacArticleDetailStack` 的嵌套 `Navigator`，旧详情保持挂载；旧 `_openRelatedArticle()` 却为完整 `ArticlePageView` 设置了 `160ms` 正向、`140ms` 反向的 `FadeTransition + SlideTransition`。目标页创建新的 `ArticleController` 后，正文还会先由 `isParsingContent` 显示 loading，再由 `Isolate.run()` 完成规范化和 chunk 解析；整页转场因此同时暴露旧页面、新页 loading 和新页正文，形成闪烁。`Esc` 走同一个路由的反向转场。
 - `M` 的额外叠加因素：`ArticlePageView` 先同步修改本地读状态、read-sync、Hive/列表通知和 `isRead`，随后 `ArticleNavigationPolicy` 立即调用相关文章返回回调，读状态刷新与 `Navigator.pop` 落在同一事件/帧内，放大了视觉抖动。
 - 修复：`MacArticleDetailStack` 的相关文章 `PageRouteBuilder` 改为零时长，`transitionsBuilder` 直接返回 child；保留嵌套 `Navigator`，不替换外层选中文章，继续保留上一层滚动/目录/显示状态。`onClose`/`Esc` 直接弹出；`onMarkedReadAndReturn` 改走带 `mounted` 守卫的 `WidgetsBinding.addPostFrameCallback`，先完成当前帧的读状态更新再返回。普通文章下一篇、恢复未读、Android 全屏路由和主时间线的行级退场动画不变。
 - 自动验证：本次生产改动后最终运行 `flutter test --no-pub`，291 项全部通过；`dart analyze lib/pages/article/article_page.dart` 为 `No issues found!`。更大范围的 `flutter analyze lib test` 未发现本次改动的 error/warning，但仓库已有 59 条 `prefer_initializing_formals` info，因此命令按项目现有规则以非零状态结束。`git diff --check` 与文档 `scripts/docs.sh check` 均通过。专门把真实 `ArticlePageView` 挂入 widget test 的尝试会启动文章图片缓存清理/缓存管理器生命周期，在 Flutter 测试 teardown 留下计时器并挂起，因此没有保留不稳定的测试；该限制不替代 macOS 真机视觉验证。
 - 仍需用户在 macOS Debug/Release 运行包含本改动的构建，至少确认：点击一层/多层相关文章无整页闪烁；`Esc` 每次只退一层且上一层滚动位置保留；相关文章按 `M` 或右下角标为已读后先完成状态更新再无闪烁返回；普通文章的 `M` 下一篇和主时间线 `180ms` 行级动画不受影响。
+
+## 2026-09-03 macOS 相关文章恢复过渡并修正退场层叠
+
+- 用户在确认零时长版本消除了闪烁后，又反馈点击进入和 `Esc`/`M` 返回完全瞬时、观感生硬；随后进一步描述返回时“整个右侧区域短暂变暗/变空，然后旧文章出现”。排查结论是路由方向的层叠问题：如果把不透明 `ColoredBox(surface)` 和正在淡出的顶层 child 一起处理，pop 时 surface 会先离开或遮住旧文章，旧文章只能在暗/空层之后显现。
+- 最终修复集中在 `_MacArticleDetailStackState._openRelatedArticle()`：push 使用 `160ms`、约 `2.5%` 水平滑入，前景 child 外保持 `Theme.of(context).colorScheme.surface` 不透明表面，并用 `easeOutCubic` 淡入；pop 使用 `140ms` 反向滑出/淡出，在明确的 `AnimationStatus.reverse` 时去掉该表面，直接让当前文章离开并露出仍挂载的上一层文章。反向 slide 使用 `easeInCubic`，反向 fade 使用 `easeInOutCubic`，避免 `easeInCubic` 在退场前段过快掉透明度。
+- `AnimatedBuilder` 复用已构建的淡入 child；初始 `dismissed` 状态仍按 push 处理，避免首帧绕过不透明表面。相关文章 `M`/工具栏标为已读继续经 `_popRelatedArticleAfterFrame()` 在当前帧后弹出，使本地读状态、Hive/read-sync、角标和跨页面通知先完成；`Esc` 直接进入同一反向过渡。
+- 本次明确不改动：macOS 右侧嵌套 `Navigator`、上一层详情的滚动/目录/解析状态、Android 全屏相关文章路由、主时间线和垃圾拦截的行级动画、普通文章下一篇策略、恢复未读语义及正文 parser/rendering。这里解决的是相关文章详情路由的“有过渡但不透明交叉淡化”。
+- 当前最终工作树验证：`dart format --output=none --set-exit-if-changed lib/pages/article/article_page.dart` 通过且无格式变化；`dart analyze` 退出码为 0，仅报告仓库已有的 67 条 info；完整 `flutter test --no-pub` 针对最终代码通过 291 项；`flutter build macos --debug` 成功生成 `build/macos/Build/Products/Debug/Fourier.app`；`scripts/docs.sh index` 与 `scripts/docs.sh check` 通过（59 页、0 warnings）；`git diff --check` 通过。构建输出中的 `AVKeyValueStatus` deprecated 是 `video_player_avfoundation` 依赖的既有 macOS 警告，不属于本次改动。
+- 仍需真实 macOS 窗口视觉确认：一层/多层关联文章点击、`Esc` 逐层返回、`M`/工具栏标为已读返回，以及确认右侧区域在 pop 全程保持旧文章可见而不短暂暗/空。若视觉仍异常，应继续检查 route overlay 与旧页面的 compositing，不要直接回退到透明整页 `FadeTransition` 或把零时长当作最终体验。
 
 ## 2026-08-31 Android 最近阅读顶部避让
 

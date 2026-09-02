@@ -1426,10 +1426,49 @@
 <details class="dg-callout" open>
 <summary>不要回退</summary>
 
-- 不要把 macOS 相关文章改回整页 `FadeTransition`/`SlideTransition`，也不要只把动画时长调短；根因是转场包裹了会异步从 loading 变为正文的完整详情树。
+- 不要把 macOS 相关文章改回“透明地包住完整 `ArticlePageView` 的 `FadeTransition` + `SlideTransition`”，也不要只把动画时长调短；根因是转场包裹了会异步从 loading 变为正文的完整详情树。当前可以保留受控的 `SlideTransition`，但必须遵守下一条记录确定的不透明 push / 直接 reveal pop 分层。
 - 不要为了“统一导航”删除 macOS 内嵌 `Navigator`、替换外层文章选中项或销毁上一层详情；这样会重新丢失滚动、目录和显示状态。
 - 不要把 `M` 的 `addPostFrameCallback` 延迟移除为同帧 `maybePop()`；读状态通知和路由弹出重新竞争同一帧后，闪烁可能复现。
 - 不要把该修复扩散到 Android 全屏路由、主时间线 `180ms` 行级动画或 HTML/图片缓存层；如果未来仍有闪烁，应先确认是否是另一个独立的渲染/缓存问题。
+</details>
+
+<a id="macos-related-detail-content-transition-2026-09-03"></a>
+
+## macOS 相关文章恢复内容过渡但避免返回空/暗层（2026-09-03）
+
+背景：2026-09-02 的零时长方案确实消除了原始整页转场带来的闪烁，但也让点击关联文章和从关联文章按 `Esc`/ `M` 返回变成瞬时切换，用户反馈观感生硬。用户进一步确认，返回时的主要不适不是“动画太短”，而是“整个右侧区域短暂变暗/变空，然后旧文章出现”，即退场层和仍挂载的旧文章之间发生了错误的层叠。
+
+这次讨论中保持不变的判断和范围：
+
+- 时间线上的 `M` 响应速度是用户认可的基准；时间线行级动画、垃圾拦截和 `Cmd+Z` 的细微响应差异不是本次 macOS 相关文章路由修复的目标，不通过改动共享动画时序来“统一”它们。
+- 相关文章必须继续使用右侧 `MacArticleDetailStack` 的嵌套 `Navigator`，保留上一层 `ArticlePageView` 的滚动位置、目录状态和已解析内容；Android 的全屏应用级路由不参与这次方案。
+- 不能直接恢复旧的“完整 `ArticlePageView` 透明淡入淡出 + 滑入滑出”：新页的 `ArticleController` 会独立经历 loading、`Isolate.run()` 规范化和 chunk 解析，透明交叉转场会再次把旧页、新页 loading 和新页正文叠在一起。
+
+排查和方案演进：
+
+- 第一版恢复动画曾把 `ColoredBox(color: surface)` 放在完整 `FadeTransition` 外侧，试图用不透明背景挡住旧页和新页 loading；正向进入时可以遮挡旧层，但反向退出时该表面随顶层路由一起离开，顶层 child 自身又在快速变透明，于是旧文章只能在暗/空层之后才显露。
+- 因此问题确认是“路由方向对应的层叠关系”而不只是曲线或持续时间。不能靠继续缩短 `140ms`、改变透明度曲线或简单包一层背景解决。
+
+最终决策：
+
+- 正向 push 使用 `160ms` 的受控过渡：保留约 `2.5%` 的水平滑入和 `easeOutCubic` 淡入；在前景 child 外保持 `Theme.of(context).colorScheme.surface` 的不透明表面，避免上一层文章和目标页异步 loading 穿透。这里的 `SlideTransition` 只移动一个有明确表面的前景层，不是旧的透明整页交叉淡化。
+- 反向 pop 使用 `140ms` 的受控滑出和淡出：检测到 `AnimationStatus.reverse` 后不再包不透明 `ColoredBox`，直接让当前文章 child 离开并露出仍挂载的上一层文章。这样退场期间始终有真实旧文章作为底层，而不是先露出一块暗/空的 surface。
+- 正向 slide 使用 `easeOutCubic`、反向 slide 使用 `easeInCubic`；正向 fade 使用 `easeOutCubic`、反向 fade 使用 `easeInOutCubic`。反向 fade 不用 `easeInCubic`，因为它会在前段过快降低透明度，重新放大“突然变空”的感受。
+- 使用 `AnimatedBuilder` 复用已构建的淡入 child，并只在明确的 reverse 状态移除 push 阶段的 surface，避免动画初始的 `dismissed` 状态被误判为 pop。相关文章的 `M`/工具栏标为已读仍通过 `_popRelatedArticleAfterFrame()` 在当前帧后执行，让读状态、Hive/read-sync、角标和跨页面通知先完成，再进入相同的反向路由过渡；`Esc` 直接进入反向过渡。
+
+后果和验证边界：
+
+- 最终效果恢复了用户需要的“有一点过渡”，同时避免两个独立构建中的完整详情页做透明交叉淡化；返回时的底层是上一层实际文章，而不是空白或暗色表面。
+- 不修改主时间线 `M`、垃圾拦截、`Cmd+Z`、Android 文章路由、普通文章下一篇策略、恢复未读语义或正文 parser/rendering。后续如果这些界面的“开始动画时间”仍有差异，应作为独立的输入/状态调度问题排查。
+- 代码改动集中在 `lib/pages/article/article_page.dart` 的 `_MacArticleDetailStackState._openRelatedArticle()`；架构边界、当前事实和验证结果同步维护在[路由与状态](../architecture/routing-state.html)、[文章渲染](../features/article-rendering.html)、[当前状态](../status/current.html)和[验证记录](../status/verification.html)。
+- 自动化检查只能证明路由结构、静态分析、测试和 macOS 构建没有回归；“返回时不再出现暗/空层”仍需在实际 macOS 窗口中点击一层/多层相关文章、用 `Esc` 和 `M` 复核。若未来修改 `transitionsBuilder`，应先做这一组视觉复测。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要回退到零时长作为最终方案：它是 2026-09-02 为隔离闪烁根因采取的阶段性稳定化，不符合之后确认的“保留自然过渡”体验目标。
+- 不要恢复没有不透明 push 表面、又在 pop 时把当前 child 淡成空白的整页交叉转场；这正是“整个右侧区域短暂变暗/变空”的层叠来源。
+- 不要在 pop 方向继续包 `ColoredBox(surface)`，除非同时重新验证旧文章会在整个退场期间持续可见；当前直接 reveal 上一层文章是有意的方向性差异。
 </details>
 
 ## 自动格式图片代理不能按嵌套源后缀选择解码器（2026-08-31）
