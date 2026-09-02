@@ -5,38 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fourier/pages/article/widgets/html_chunk_card.dart';
 import 'package:fourier/utils/html_chunk_parser.dart';
-import 'package:fourier/utils/selectable_html_compatibility.dart';
 
 void main() {
-  test('list selection compatibility unwraps redundant item paragraphs', () {
-    final normalized = SelectableHtmlCompatibility.normalizeList('''
-<ul>
-  <li><p><strong>First:</strong> value</p></li>
-  <li><p>Second item</p></li>
-</ul>
-''');
-
-    expect(normalized, contains('<li>• <strong>First:</strong> value</li>'));
-    expect(normalized, contains('<li>• Second item</li>'));
-    expect(normalized, isNot(contains('<li>• <p>')));
-  });
-
-  test('list selection compatibility preserves real item paragraphs', () {
-    final normalized = SelectableHtmlCompatibility.normalizeList('''
-<ol start="3">
-  <li value="5"><p>First paragraph</p><p>Second paragraph</p></li>
-  <li><p>Parent</p><ul><li><p>Nested item</p></li></ul></li>
-</ol>
-''');
-
-    expect(
-      normalized,
-      contains('<li value="5">5. First paragraph<br><br>Second paragraph</li>'),
-    );
-    expect(normalized, contains('6. Parent<br><ul>'));
-    expect(normalized, contains('&nbsp;&nbsp;&nbsp;&nbsp;• Nested item'));
-  });
-
   testWidgets('macOS mouse drag selects rendered article paragraph', (
     tester,
   ) async {
@@ -194,6 +164,47 @@ void main() {
     });
   }
 
+  testWidgets(
+    'macOS blockquote keeps source br separators without multiplying them',
+    (tester) async {
+      final chunk = HtmlChunkParser.parseSync(
+        '<blockquote>First sentence by <a href="https://example.com">@author</a>.<br><br>Second sentence<br><br>Third sentence</blockquote>',
+      ).single;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.macOS),
+          home: Scaffold(
+            body: SelectionArea(
+              child: SizedBox(
+                width: 600,
+                child: HtmlChunkCard(
+                  chunk: chunk,
+                  articleId: 'selection-test',
+                  maxWidth: 600,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final paragraph = find
+          .byType(RichText)
+          .evaluate()
+          .map((element) => element.renderObject)
+          .whereType<RenderParagraph>()
+          .firstWhere(
+            (paragraph) => paragraph.text.toPlainText().contains('First'),
+          );
+
+      expect(
+        paragraph.text.toPlainText(),
+        'First sentence by @author.\n\nSecond sentence\n\nThird sentence',
+      );
+    },
+  );
+
   testWidgets('Android long press still selects rendered article text', (
     tester,
   ) async {
@@ -278,5 +289,213 @@ void main() {
     await tester.pump();
 
     expect(selected?.plainText, contains('selection'));
+  });
+
+  for (final platform in <TargetPlatform>[
+    TargetPlatform.macOS,
+    TargetPlatform.android,
+  ]) {
+    testWidgets(
+      '$platform keeps selectable list items on separate text flows',
+      (tester) async {
+        final chunk = HtmlChunkParser.parseSync('''
+<ul>
+  <li><p>First short list item.</p></li>
+  <li><p>Second short list item.</p></li>
+</ul>
+''').single;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(platform: platform),
+            home: Scaffold(
+              body: SelectionArea(
+                child: SizedBox(
+                  width: 600,
+                  child: HtmlChunkCard(
+                    chunk: chunk,
+                    articleId: 'selection-test',
+                    maxWidth: 600,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        final itemParagraphs = find
+            .byType(RichText)
+            .evaluate()
+            .map((element) => element.renderObject)
+            .whereType<RenderParagraph>()
+            .map((paragraph) => paragraph.text.toPlainText())
+            .where(
+              (text) =>
+                  text.contains('First short list item.') ||
+                  text.contains('Second short list item.'),
+            )
+            .toList();
+
+        expect(itemParagraphs, hasLength(2));
+        expect(itemParagraphs.join('\n'), contains('First short list item.'));
+        expect(itemParagraphs.join('\n'), contains('Second short list item.'));
+      },
+    );
+  }
+
+  testWidgets(
+    'selectable list keeps wrapped content aligned after its marker',
+    (tester) async {
+      final chunk = HtmlChunkParser.parseSync('''
+<ul>
+  <li><p>This is a deliberately long list item whose text must wrap onto multiple lines while every continuation line stays aligned with the item text.</p></li>
+</ul>
+''').single;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.macOS),
+          home: Scaffold(
+            body: SelectionArea(
+              child: SizedBox(
+                width: 300,
+                child: HtmlChunkCard(
+                  chunk: chunk,
+                  articleId: 'selection-test',
+                  maxWidth: 300,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final richTexts = find.byType(RichText).evaluate().map((element) {
+        return element.renderObject as RenderParagraph;
+      });
+      final marker = richTexts.firstWhere(
+        (paragraph) => paragraph.text.toPlainText().trim() == '•',
+      );
+      final item = richTexts.firstWhere(
+        (paragraph) =>
+            paragraph.text.toPlainText().contains('This is a deliberately'),
+      );
+      final lines = item.textPainter.computeLineMetrics();
+
+      expect(lines.length, greaterThan(1));
+      expect(
+        item.localToGlobal(Offset.zero).dx,
+        greaterThan(marker.localToGlobal(Offset.zero).dx),
+      );
+      expect(lines[1].left, closeTo(lines[0].left, 0.01));
+    },
+  );
+
+  testWidgets('selectable list preserves ordered and nested markers', (
+    tester,
+  ) async {
+    final chunk = HtmlChunkParser.parseSync('''
+<ol start="3">
+  <li><p>Parent item</p><ul><li><p>Nested item</p></li></ul></li>
+  <li><p>Following item</p></li>
+</ol>
+''').single;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.android),
+        home: Scaffold(
+          body: SelectionArea(
+            child: SizedBox(
+              width: 600,
+              child: HtmlChunkCard(
+                chunk: chunk,
+                articleId: 'selection-test',
+                maxWidth: 600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final plainTexts = find
+        .byType(RichText)
+        .evaluate()
+        .map(
+          (element) =>
+              (element.renderObject as RenderParagraph).text.toPlainText(),
+        )
+        .toList();
+
+    expect(plainTexts, contains('3.'));
+    expect(plainTexts, contains('•'));
+    expect(plainTexts, contains('4.'));
+    expect(plainTexts, contains('Parent item'));
+    expect(plainTexts, contains('Nested item'));
+    expect(plainTexts, contains('Following item'));
+  });
+
+  testWidgets('macOS can select across separate list item text flows', (
+    tester,
+  ) async {
+    SelectedContent? selected;
+    final chunk = HtmlChunkParser.parseSync('''
+<ul>
+  <li><p>First selectable item.</p></li>
+  <li><p>Second selectable item.</p></li>
+</ul>
+''').single;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.macOS),
+        home: Scaffold(
+          body: SelectionArea(
+            onSelectionChanged: (value) => selected = value,
+            child: SizedBox(
+              width: 600,
+              child: HtmlChunkCard(
+                chunk: chunk,
+                articleId: 'selection-test',
+                maxWidth: 600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final paragraphs = find.byType(RichText).evaluate().map((element) {
+      return element.renderObject as RenderParagraph;
+    });
+    final first = paragraphs.firstWhere(
+      (paragraph) => paragraph.text.toPlainText().contains('First selectable'),
+    );
+    final second = paragraphs.firstWhere(
+      (paragraph) => paragraph.text.toPlainText().contains('Second selectable'),
+    );
+    Offset textPosition(RenderParagraph paragraph, int offset) {
+      return paragraph.localToGlobal(
+        paragraph.getOffsetForCaret(
+              TextPosition(offset: offset),
+              const Rect.fromLTWH(0, 0, 2, 20),
+            ) +
+            Offset(0, paragraph.preferredLineHeight - 2),
+      );
+    }
+
+    final mouse = await tester.startGesture(
+      textPosition(first, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await mouse.moveTo(textPosition(second, second.text.toPlainText().length));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    expect(selected?.plainText, contains('First selectable item.'));
+    expect(selected?.plainText, contains('Second selectable item.'));
   });
 }

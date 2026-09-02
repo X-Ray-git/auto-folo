@@ -24,7 +24,6 @@ import '../../../utils/youtube_embed_utils.dart';
 import '../../../utils/html_contrast_utils.dart';
 import '../../../utils/image_clipboard.dart';
 import '../../../utils/macos_zoom_in_cursor.dart';
-import '../../../utils/selectable_html_compatibility.dart';
 import '../../../services/article_image_service.dart';
 import '../../../services/animation_activity_monitor.dart';
 import '../../../services/article_image_cache_service.dart';
@@ -34,6 +33,7 @@ import 'article_svg_image.dart';
 import 'inline_video_player.dart';
 import 'youtube_embed_player.dart';
 import 'macos_managed_animated_image.dart';
+import 'selectable_html_list.dart';
 
 double _fallbackImageHeight(double width) =>
     (width * 0.6).clamp(180.0, 420.0).toDouble();
@@ -614,17 +614,86 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
 
   String _buildSelectableBlockHtml(String html) {
     final fragment = html_parser.parseFragment(html);
-    return fragment.nodes
-        .map((node) {
-          if (node is dom.Element) {
-            final tag = node.localName?.toLowerCase();
-            if (tag == 'p' || tag == 'div') return node.innerHtml;
-            return node.outerHtml;
+    final buffer = StringBuffer();
+    var hasContent = false;
+    var lastNodeWasBlock = false;
+
+    bool endsWithBreak() => RegExp(
+      r'(?:<br\s*/?>\s*)+$',
+      caseSensitive: false,
+    ).hasMatch(buffer.toString());
+
+    void appendInline(String value) {
+      if (value.isEmpty) return;
+      if (lastNodeWasBlock && hasContent && !endsWithBreak()) {
+        buffer.write('<br><br>');
+      }
+      buffer.write(value);
+      hasContent = true;
+      lastNodeWasBlock = false;
+    }
+
+    void appendBlock(String value) {
+      if (value.trim().isEmpty) return;
+      if (hasContent && !endsWithBreak()) {
+        buffer.write('<br><br>');
+      }
+      buffer.write(value);
+      hasContent = true;
+      lastNodeWasBlock = true;
+    }
+
+    const blockTags = {
+      'address',
+      'article',
+      'aside',
+      'blockquote',
+      'div',
+      'figcaption',
+      'figure',
+      'footer',
+      'header',
+      'hr',
+      'li',
+      'main',
+      'nav',
+      'ol',
+      'p',
+      'pre',
+      'section',
+      'table',
+      'ul',
+    };
+
+    for (final node in fragment.nodes) {
+      if (node is dom.Text) {
+        final text = node.data;
+        if (text.trim().isEmpty) {
+          if (hasContent && !lastNodeWasBlock && !endsWithBreak()) {
+            buffer.write(' ');
           }
-          return htmlEscape.convert(node.text ?? '');
-        })
-        .where((part) => part.trim().isNotEmpty)
-        .join('<br><br>');
+        } else {
+          appendInline(htmlEscape.convert(text));
+        }
+        continue;
+      }
+
+      if (node is! dom.Element) continue;
+      final tag = node.localName?.toLowerCase();
+      if (tag == 'br') {
+        buffer.write(node.outerHtml);
+        continue;
+      }
+      if (tag == 'p' || tag == 'div') {
+        appendBlock(node.innerHtml);
+      } else if (tag != null && blockTags.contains(tag)) {
+        appendBlock(node.outerHtml);
+      } else {
+        appendInline(node.outerHtml);
+      }
+    }
+
+    return buffer.toString().trim();
   }
 
   // ── 表格 ──
@@ -743,15 +812,19 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
     }
     final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
     if (usesSelectionWorkaround) {
-      htmlData = SelectableHtmlCompatibility.normalizeList(htmlData);
+      return SelectableHtmlList(
+        html: htmlData,
+        markerStyle: TextStyle(fontSize: 16, height: 1.5, color: cs.onSurface),
+        buildFragment: (fragmentHtml) =>
+            _buildSelectableListFragment(context, cs, fragmentHtml),
+      );
     }
+
     final html = Html(
       data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
-        if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
         'body': Style(
-          display: usesSelectionWorkaround ? Display.inline : null,
           fontSize: FontSize(16),
           lineHeight: const LineHeight(1.5),
           color: cs.onSurface,
@@ -762,28 +835,46 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
         'strong': Style(fontWeight: FontWeight.w700),
         'em': Style(fontStyle: FontStyle.italic),
         'code': _inlineCodeStyle(),
-        'ul': Style(
-          display: usesSelectionWorkaround ? Display.inline : null,
-          padding: usesSelectionWorkaround
-              ? HtmlPaddings.zero
-              : HtmlPaddings.only(left: 20),
-          margin: Margins.zero,
-        ),
-        'ol': Style(
-          display: usesSelectionWorkaround ? Display.inline : null,
-          padding: usesSelectionWorkaround
-              ? HtmlPaddings.zero
-              : HtmlPaddings.only(left: 20),
-          margin: Margins.zero,
-        ),
-        if (usesSelectionWorkaround)
-          'li': Style(display: Display.inline, after: '\n'),
+        'ul': Style(padding: HtmlPaddings.only(left: 20), margin: Margins.zero),
+        'ol': Style(padding: HtmlPaddings.only(left: 20), margin: Margins.zero),
       },
       extensions: _buildCommonExtensions(context, cs),
     );
-    return usesSelectionWorkaround
-        ? Padding(padding: const EdgeInsets.only(left: 20), child: html)
-        : html;
+    return html;
+  }
+
+  Widget _buildSelectableListFragment(
+    BuildContext context,
+    ColorScheme cs,
+    String htmlData,
+  ) {
+    return Html(
+      data: htmlData,
+      onLinkTap: _handleLinkTap,
+      style: {
+        'html': Style(display: Display.inline),
+        'body': Style(
+          display: Display.inline,
+          fontSize: FontSize(16),
+          lineHeight: const LineHeight(1.5),
+          color: cs.onSurface,
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+          textAlign: TextAlign.start,
+        ),
+        'div': Style(display: Display.inline),
+        'p': Style(
+          display: Display.inline,
+          margin: Margins.zero,
+          padding: HtmlPaddings.zero,
+        ),
+        'a': Style(color: cs.primary, textDecoration: TextDecoration.none),
+        'strong': Style(fontWeight: FontWeight.w700),
+        'em': Style(fontStyle: FontStyle.italic),
+        'code': _inlineCodeStyle(),
+      },
+      extensions: _buildCommonExtensions(context, cs),
+    );
   }
 
   // ── 分割线 ──

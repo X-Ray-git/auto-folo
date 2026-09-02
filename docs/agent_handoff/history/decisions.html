@@ -1403,6 +1403,29 @@
 
 后果：已落盘的失败记录无需迁移，下一次普通图片成功后会由既有成功通知清除；最多发生一次缓存重建，不再持续闪烁。同篇第三张相同结构图片同步受益。后续若出现其他“扩展名与响应格式不一致”的代理，应优先依据稳定转换参数或真实内容类型扩展共享分类，不要把某个域名整体视为位图，也不要取消真正 SVG 的文章级缓存路径。
 
+## 文章选择兼容层同时修复列表断行和 blockquote 多重空行（2026-09-02）
+
+背景：在 Flutter `3.47.0` / `flutter_html 3.0.0` 下，文章级 `SelectionArea` 会暴露块级 HTML 包裹产生的 leading `WidgetSpan` / nested selectable 问题。此前选择兼容路径把标题、段落和引用的解析包裹节点改为 inline；列表还把 marker 写进同一个文本流，并用 `li: after: '\n'` 试图模拟项目之间的换行。用户先发现长列表项的续行没有悬挂缩进，部分列表项甚至全部粘在同一段；修复列表后又发现微博文章中转发正文的句子之间出现多个空行。两类现象看起来相近，但分别来自列表布局和 blockquote 换行拼接。
+
+调查：为避免 Hive 锁，使用当前数据库的只读副本进行抽查；副本包含 5000 篇文章，其中微博相关订阅源 228 篇，78 篇包含至少 4 个 `<br>`。原始微博转发正文普遍用成对的 `<br><br>` 分隔段落，单次连续 `<br>` 最多为 2 个，因此不是“数据库已经写入 5 个连续换行”。`ArticleContentUtils.normalizeHtml()` 只把 3 个以上连续 `<br>` 压到两个，按语义保留成对分隔是正确的。真正的放大来自旧 `_buildSelectableBlockHtml()`：它把 blockquote 的每个顶层 DOM 节点（文字、自动链接生成的 `<a>`、已有 `<br>`）都收集后统一用 `<br><br>` 连接，导致已有换行和行内链接也被当成独立段落。一个样本的 blockquote 原始内容有 194 个 `<br>`，旧兼容拼接结果达到 784 个。列表样本则是正常的语义 `<ul><li><p>…</p></li></ul>`，问题完全在渲染端，不需要来源特判。
+
+决策：保留文章级 `SelectionArea`、`flutter_html`、链接点击、行内代码和原始 HTML/数据库内容；兼容逻辑继续放在 `HtmlChunkCard` 的 Flutter widget 边界，不前移到数据库规范化、翻译/摘要输入或 Markdown 导出。blockquote 采用 DOM 感知的单一输出流：连续文字、链接和已有 `<br>` 原样追加；顶层 `p/div` 只去掉包裹，真实块级节点之间才补两个 `<br>`，且如果前面已有换行则不重复补。列表不再把 marker 伪装成 HTML 文本，而是在 macOS/Android 上由 `SelectableHtmlList` 为每个 `li` 建立独立 Row，marker 使用固定宽度列，正文使用 `Expanded`，因此续行天然从正文起点继续；递归保留 `ul/ol`、`ol start`、`li value` 和嵌套层级。iOS、Windows、Linux 继续走 `flutter_html` 原生列表布局。
+
+实现：删除旧的 `lib/utils/selectable_html_compatibility.dart`，新增 `lib/pages/article/widgets/selectable_html_list.dart`；`HtmlChunkCard` 在 macOS/Android 分支中调用新的列表行布局，并将 blockquote 拼接改为只在真实块边界补分隔。列表项正文仍通过 `Html` 子组件渲染，以保留链接、粗体、斜体、行内代码、图片/表格等已有扩展。没有使用零宽字符、来源名称特判或数据库迁移；历史缓存文章在重新构建页面时即可使用新布局。
+
+验证：新增/调整 widget 回归测试，覆盖 macOS/Android 列表分项、长文本续行的几何对齐、ordered/nested marker、跨列表项选择，以及带链接和已有 `<br><br>` 的 blockquote 精确换行。定向测试 13 项通过；`flutter test --no-pub` 全量 295 项通过；`dart analyze lib test` 无 error/warning，仅有工程原有的 59 条 `prefer_initializing_formals` info；Wiki 检查为 59 页、0 warnings。测试使用 `TargetPlatform` 和真实 `RenderParagraph`/选择结果验证结构，仍应在后续 Flutter 或 `flutter_html` 升级后重新做 Android/macOS 真机视觉检查。
+
+后果：微博原始 HTML 无需清洗迁移，列表和 blockquote 的修复不会改变导出或 AI 输入内容。以后不要恢复“每个顶层节点都 `.join('<br><br>')`”、`li: after: '\n'` 或把 marker 写入单一 HTML 文本流的做法；如果上游修复 leading `WidgetSpan`，也必须先复核真实选择、列表续行、嵌套 marker、blockquote 段间距和行内链接，再考虑移除局部兼容路径。2026-08-31 的“正文选择通过扁平化冗余 HTML 包裹”条目保留为历史演进记录，本条描述其当前实现的后续收敛。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要为解决微博间距直接全局删除 `<br><br>`；它是来源表达段落边界的有效语义。
+- 不要把 blockquote 中的文字、链接或已有 `<br>` 拆成多个伪段落再统一追加间距。
+- 不要把列表 marker 重新塞入 `<li>` 文本，或重新依赖 `after` 伪内容模拟项目换行。
+- 不要把此次视觉兼容改动写回数据库或影响 Markdown/翻译/摘要输入。
+</details>
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>

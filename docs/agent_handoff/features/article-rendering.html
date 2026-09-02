@@ -165,10 +165,10 @@ HTML 空段规范化：
 
 - 文章页继续由一个外层 `SelectionArea` 包裹完整正文。macOS 使用鼠标拖选，Android 使用长按选择；`Command-C` 必须继续交给系统复制当前选区，不能被无修饰键 `C` 的 Markdown 全文复制快捷键覆盖。
 - Flutter `3.47.0` 配合 `flutter_html 3.0.0` 时，非空的标题、段落、引用和列表也可能无法选择：`flutter_html` 会把块级 `html/body/div/p/ul/ol/li` 组织成以 `WidgetSpan` 开头的嵌套 `RichText`。macOS 拖选会得到空字符串，Android 长按可能只得到 U+FFFC 对象替代符，而不是正文。该问题不同于前述“空 chunk 触发断言”，上游已确认为 Flutter 选择偏移问题：<https://github.com/flutter/flutter/issues/187506>。
-- `HtmlChunkParser` 已经把正文拆成独立布局块，因此 `HtmlChunkCard` 在 macOS/Android 渲染 heading、paragraph、blockquote、list 时，把只承担解析包裹职责的节点改为 inline，避免再生成冗余的 leading `WidgetSpan`。这只改变 widget 结构，不修改数据库正文、规范化 HTML 或导出内容。
-- blockquote 在选择兼容路径中只移除顶层 `p/div` 包裹，并以两个 `<br>` 保留多个独立块的段落语义；外层引用容器、左侧主题色线、链接和行内代码样式不变。list 先由 `SelectableHtmlCompatibility` 展开 `li` 直属的冗余 `p/div` 包裹，再把项目符号或序号写入同一个可选择文本流；单段 `<li><p>…</p></li>` 不产生额外换行，多段列表项以两个 `<br>` 保留段落边界，同时保留链接、行内代码、`ol start`、`li value`、嵌套层级及外层 `20px` 缩进。
+- `HtmlChunkParser` 已经把正文拆成独立布局块，因此 `HtmlChunkCard` 在 macOS/Android 渲染 heading、paragraph、blockquote 时，把只承担解析包裹职责的节点改为 inline，避免再生成冗余的 leading `WidgetSpan`；list 则使用独立的可选择列表行，以固定 marker 列和可换行正文列避免列表项粘连及续行失去悬挂缩进。这只改变 widget 结构，不修改数据库正文、规范化 HTML 或导出内容。
+- blockquote 在选择兼容路径中只移除顶层 `p/div` 包裹；连续文字、链接和已有 `<br>` 节点保持在同一个行内流中，只在真实块级边界之间补两个 `<br>`，避免把每个链接或已有换行再次当成独立段落。外层引用容器、左侧主题色线、链接和行内代码样式不变。list 保留原始语义 `ul/ol/li`，在 macOS/Android 上由独立可选择行负责项目符号、序号、嵌套层级和外层 `20px` 缩进；列表项正文继续交给 `flutter_html` 保留链接、行内代码和富文本样式，其他平台继续使用原生列表布局。
 - 表格和代码块使用自己的纯文本/表格渲染路径，本轮不改。不要把所有 HTML 粗暴转成纯文本，也不要给正文插入零宽哨兵字符；前者会丢失链接和排版，后者不能修正嵌套 selectable 的偏移结构。
-- 回归测试必须断言选区中包含真实单词，不能只断言 `SelectedContent` 非空，否则 Android 的 U+FFFC 会造成假通过。列表样本必须使用常见的 `<li><p>…</p></li>`，不能只覆盖简化的 `<li>…</li>`；当前覆盖 macOS 段落、标题、引用、列表鼠标拖选，以及 Android 段落、序号列表长按选择。
+- 回归测试必须断言选区中包含真实单词，不能只断言 `SelectedContent` 非空，否则 Android 的 U+FFFC 会造成假通过。列表样本必须使用常见的 `<li><p>…</p></li>`，不能只覆盖简化的 `<li>…</li>`；当前覆盖 macOS 段落、标题、引用、包含链接和已有 `<br><br>` 的 blockquote 换行、列表鼠标拖选，以及 Android 段落、序号列表长按选择、列表续行悬挂缩进和嵌套 marker。
 
 来源兼容规则：
 

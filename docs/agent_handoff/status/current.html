@@ -50,7 +50,7 @@
 <script type="text/markdown" id="wiki-content">
 # 当前状态
 
-截至 2026-08-16：
+截至 2026-09-02：
 
 - YouTube 播放器 attestation 问题已定位并完成修复（macOS 真机验证通过）：根因是 BotGuard GenerateIT 只对真实 YouTube 页面环境签发 integrity token，127.0.0.1 裸页只能拿到 websafe fallback token（GVS 试用配额耗尽后播放中 403 卡死，或整链失败回退官方 iframe）。播放器 WebView 现加载真实 `youtube-nocookie.com/embed/<id>` 页面并在 onPageFinished 注入 IIFE 版运行时：接管 DOM、经代理重抓 embed 页 HTML 提取 `ytcfg`/`ytAtN(R/T)`、注入 `yt.config_`、用页面 challenge 走 GenerateIT（`/att/get`+eacrToken 仅回退）；loopback 代理补 CORS（请求头通配）与 OPTIONS 预检，macOS 另起自签名 HTTPS loopback 实例并经 `onSslAuthError` 仅对本站证书放行（绕开混合内容拦截）；运行时带 Trusted Types 直通策略 shim。完整排障证据、探针矩阵与逐层修复过程见 `features/media-playback-attestation.html`（探针脚本在已忽略的 `scratch/youtube-attestation-probe/`）。用户已验证：真实播放、hover 细线修复、关页/切文章后声音停止。遗留：SABR UMP 空响应由 MWEB 直连兜底（独立问题）、WEB_EMBEDDED 直连仍 "This video is unavailable"、Android 未真机验证。
 
@@ -120,6 +120,7 @@
 - 自动翻译/摘要只在正文持久化后、准备入队时读取最新本地已读状态：当时已读则不入队，当时未读则正常入队且后续不因标记已读而取消。这取代了长期使用中效果很有限的“已读后移出等待队列”机制；手动操作和垃圾拦截判定不受影响。
 - HTML 清洗修复了半透明内容被误删、顶层转义文本变成标签、同一文章正文更新命中旧缓存，以及 `<p><span><br></span></p>` 格式包装空段未被删除的问题。空段清洗保护媒体与 `id/name` 锚点，不合并正常非空段落。规范化缓存以正文 SHA-256 指纹校验变化，不额外长期保存第二份原始 HTML。没有有效地址的 iframe、video 或 audio 保留为明确的不可用提示，并提供经过 HTTP/HTTPS 校验的原文入口；video 与 audio 都支持从子级 `<source src>` 提取资源。
 - HTML chunk 解析增加了 `SelectionArea` 安全边界：没有可见文字或实际媒体的空格式块不再进入 `flutter_html`，避免 Flutter 3.47 为零字符 `Text.rich` 创建无效选择区间。该修复读取时生效、不改数据库；4367 篇本地文章快照中的问题块由 888 降为 0。真实 Readability 抽取失败仍按后台任务机制单独处理。
+- 文章选择兼容层已同时修复列表和微博转发 blockquote 的排版：macOS/Android 列表使用固定 marker 列 + 可换行正文列，续行保持悬挂缩进；blockquote 保留连续文字、链接和已有 `<br>`，只在真实块边界补间距，避免旧逻辑把每个节点重复扩展为 `<br><br>`。原始 HTML、数据库和其他平台原生列表路径不变。详见 `features/article-rendering.html` 与 2026-09-02 决策日志。
 - YouTube 在 macOS/Android 已接入可复现构建的 YouTube.js +
   googlevideo SABR + Shaka 首选播放器：点击后才启动带随机能力路径的
   `127.0.0.1` 服务，API/媒体走严格 HTTPS 域名白名单代理，媒体流不经过
