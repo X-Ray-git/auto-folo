@@ -132,9 +132,12 @@ class LlmConfig {
       'model': model,
       'temperature': temperature,
       'max_tokens': maxTokens,
+      // DeepSeek defaults to thinking mode when this field is omitted. Send
+      // the explicit disabled state so the user's false setting reaches the
+      // provider instead of being interpreted as the provider default.
+      'thinking': {'type': thinking ? 'enabled' : 'disabled'},
     };
     if (thinking) {
-      body['thinking'] = {'type': 'enabled'};
       body['reasoning_effort'] = reasoningEffort;
     }
     return body;

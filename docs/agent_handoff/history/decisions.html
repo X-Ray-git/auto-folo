@@ -1426,6 +1426,25 @@
 - 不要把此次视觉兼容改动写回数据库或影响 Markdown/翻译/摘要输入。
 </details>
 
+## 显式传递 DeepSeek 思考模式开关，修复翻译设置与 Provider 默认值错位（2026-09-02）
+
+背景：用户明确将翻译的思考模式设置为关闭，但真实 `llmUsageEvents` 数据显示，2444 条翻译请求的本地配置快照均为 `thinking=false`，累计仍有 15,591,977 个 reasoning token。账本记录的是每次真实响应中的 token 用量，说明这不是统计字段凭空生成；DeepSeek Chat Completions 文档说明，省略 `thinking` 时默认启用思考模式。此前 `LlmConfig.toRequestBody()` 只在 `thinking=true` 时发送 `thinking: {type: enabled}`，关闭时完全省略该字段，Provider 遂采用了自己的默认值。`reasoning_effort=high` 虽保存在本地配置快照中，但旧代码只在开启分支发送它，真正的错位点是缺少显式 disabled，而不是账本或设置持久化失败。
+
+决策：统一在 `LlmConfig.toRequestBody()` 中始终发送 `thinking: {type: enabled/disabled}`；只有启用思考模式时才发送 `reasoning_effort`。翻译普通请求、翻译分块请求、摘要文本/视觉请求、质量过滤文本/视觉请求和关系请求都通过 `...config.toRequestBody()` 复用这条边界，因此不为各业务服务分别打补丁。保留 `max_tokens`、模型、温度和其他既有参数语义，不把关闭状态改成删除 Provider 字段的隐式约定。
+
+验证：新增配置回归测试，分别断言关闭时得到 `thinking.type=disabled` 且不含 `reasoning_effort`，开启时得到 `thinking.type=enabled` 并保留选择的 effort。定向配置/账本测试 11 项通过；`flutter test --no-pub` 全量 297 项通过；`dart analyze lib test` 无 error/warning，仅保留工程原有的 59 条 `prefer_initializing_formals` info。历史数据库只读分析和历史 token 不做迁移或修正；发布后必须按请求时间筛选新翻译记录，确认关闭模式下 Provider 返回的 `reasoningTokens` 为 0 或明确的零值。
+
+后果：本地关闭设置不再依赖 DeepSeek 的默认行为，翻译调用不会因为遗漏开关而意外进入思考模式；开启模式仍可使用 `reasoning_effort`。旧账本继续作为真实历史保留，因而修复后短期内按全部时间汇总时仍会看到过去产生的 reasoning token。不要把 `thinking=false` 再编码为省略字段，也不要通过清空/改写历史账本制造“修复后为零”的假象；不要在没有新请求证据时声称 Provider 已完成线上验证。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要只修改翻译 Worker；所有 DeepSeek 请求都必须继续经过共享的 `LlmConfig.toRequestBody()`。
+- 不要在关闭时继续省略 `thinking`，因为 DeepSeek 的省略值是启用而不是禁用。
+- 不要在思考模式关闭时发送 `reasoning_effort`，避免把无效或误导性的 effort 参数带入请求。
+- 不要删除、重算或覆盖修复前的 `llmUsageEvents`；用时间边界区分历史和修复后的真实数据。
+</details>
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>

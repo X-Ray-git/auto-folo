@@ -29,6 +29,39 @@ void main() {
     expect(updated.concurrency, original.concurrency);
   });
 
+  test('request body explicitly disables thinking when configured off', () {
+    const config = LlmConfig(
+      model: 'model-a',
+      thinking: false,
+      reasoningEffort: 'max',
+      temperature: 0.2,
+      maxTokens: 2048,
+    );
+
+    final body = config.toRequestBody();
+
+    expect(body['thinking'], {'type': 'disabled'});
+    expect(body.containsKey('reasoning_effort'), isFalse);
+  });
+
+  test(
+    'request body enables thinking and sends its effort when configured on',
+    () {
+      const config = LlmConfig(
+        model: 'model-a',
+        thinking: true,
+        reasoningEffort: 'max',
+        temperature: 0.2,
+        maxTokens: 2048,
+      );
+
+      final body = config.toRequestBody();
+
+      expect(body['thinking'], {'type': 'enabled'});
+      expect(body['reasoning_effort'], 'max');
+    },
+  );
+
   test('load rejects concurrency values that would stall a worker', () async {
     await GStorage.setting.put('llm_filter_concurrency', 0);
 
