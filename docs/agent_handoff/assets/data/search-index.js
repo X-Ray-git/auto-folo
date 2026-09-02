@@ -1,5 +1,5 @@
 /* 由 scripts/docs-index.js 生成，随内容提交；阅读端零生成。 */
-window.WIKI_SEARCH_MANIFEST = "b88b1eeef13a9d04";
+window.WIKI_SEARCH_MANIFEST = "2ce6f0962a515770";
 window.WIKI_SEARCH_INDEX = [
  {
   "path": "architecture/networking.html",
@@ -83,6 +83,10 @@ window.WIKI_SEARCH_INDEX = [
   "path": "features/article-rendering.html",
   "title": "文章渲染",
   "headings": [
+   {
+    "id": "选择结果跨异步刷新保持稳定",
+    "text": "选择结果跨异步刷新保持稳定"
+   },
    {
     "id": "目录面板大面板原生-backdrop",
     "text": "目录面板：大面板原生 backdrop"
@@ -372,6 +376,10 @@ window.WIKI_SEARCH_INDEX = [
    {
     "id": "摘要完成后的关系建立",
     "text": "摘要完成后的关系建立"
+   },
+   {
+    "id": "文章级状态通知与摘要选区",
+    "text": "文章级状态通知与摘要选区"
    },
    {
     "id": "翻译持久化时序",
@@ -3893,6 +3901,10 @@ window.WIKI_SEARCH_INDEX = [
    {
     "id": "显式传递-deepseek-思考模式开关修复翻译设置与-provider-默认值错位2026-09-02",
     "text": "显式传递 DeepSeek 思考模式开关，修复翻译设置与 Provider 默认值错位（2026-09-02）"
+   },
+   {
+    "id": "摘要选择稳定性采用逐文章通知和稳定-parser2026-09-03",
+    "text": "摘要选择稳定性采用逐文章通知和稳定 parser（2026-09-03）"
    }
   ],
   "text": "决策日志 应用整体迁移为 Fourier 背景：旧名称 Auto Folo 容易把个人二次开发客户端与 Folo 官方品牌混在一起，且旧应用身份、图标和包名已经不适合作为长期公开工程标识。 决策：应用展示名、Dart package、Android application id、macOS bundle id、MethodChannel、构建产物和视觉素材统一迁移为 Fourier；旧配置导入与历史内容保留明确兼容。GitHub 仓库名称、远端 URL 和本地目录另行迁移，当前不伪造已经完成的状态。 后果：Fourier 会被 Android 和 macOS 视为新的应用身份。迁移前必须从旧版导出设置，安装后再导入；旧 Auto Folo 名称不得重新出现在当前产品文案或命名空间中。 Wiki 使用内嵌 Markdown 的离线单页结构 背景：目标要求克隆后直接双击 index.html 阅读，无服务、无构建步骤、无外部依赖，同时正文仍尽量保持 Markdown 编辑体验。浏览器在 file:// 下不能可靠地由入口页读取独立 .md 文件。 决策：每个专题使用自包含 .html ，正文写在 script[type=\"text/markdown\"] 中并由仓库内置 markdown-it 渲染； index.html 负责入口，搜索索引作为已提交静态数据。正文允许内嵌可信 HTML 和 SVG，不使用 Mermaid。 后果：编辑和阅读是同一个文件，双击即可使用；修改内容后只需运行索引和一致性检查。不得重新引入必须启动服务器、CDN、ES Module 或运行时 fetch() 的方案。 保留根目录 AGENT_HANDOFF.md 作为入口 背景：后续 agent 会预期根目录存在交接文件。 决策：保留 AGENT_HANDOFF.md 作为短入口，把详细知识迁移到 docs/agent_handoff/ 。 后果：agent 能快速起步，同时完整历史仍然可查。 完整历史按主题归档 背景：旧的单文件交接文档包含重要历史讨论，但 8,000 余行内容集中在一个文件中，不适合作为 wiki 证据库继续维护。 决策：完整历史按主题迁移到 history/archive/ ，每个旧编号章节只归入一个主主题； history/chronology.md 保留原始出现顺序和稳定 legacy-xxx 锚点。 history/timeline.md 只保留兼容入口。 后果：专题页可以保持简洁，历史仍可按主题或旧编号追溯，也不会继续形成新的巨型单文件。 不使用数字文件前缀 背景：开发顺序不遵循固定计划。 决策：使用语义化 wiki 路径，由 README 描述推荐阅读顺序。 后果：新增主题时无需重命名文件，也不会暗示优先级。 文章正文保留 Column 背景：Sliver 虚拟化可能提升性能，但会影响选择、目录锚点、图片生命周期和滚动行为。 决策：不要随意切换到 SliverList.builder 。 后果：除非进行专门重构，否则围绕当前结构优化。 不要回退 保留全文选择行为。 保留目录锚点准确性。 保留图片预览/光标/菜单行为。 保留当前滚动位置语义。 畸形文章修复保持保守 背景：少数真实文章出现异常空白、表格渲染、空代码块或交互组件文本问题。有些问题来自上游内容本身畸形。 决策：添加宽泛渲染启发式规则前，先检查真实源内容。优先做窄修复，或接受罕见上游边缘情况。 后果：渲染保持可预测，不为了少数坏文章牺牲常见正确文章。 不裁剪宽表格 scroll viewport 背景：在横向表格 scroll viewport 外包圆角 ClipRRect ，会在表格宽于文章栏时切掉矩形表格四角。 决策：不要仅为视觉一致性而给表格 viewport 加圆角裁剪。 后果：宽表格保持正确的直角边框，同时仍可横向滚动。 无 <th> 的稳定网格仍属于数据表 背景：阿里技术文章《为什么大模型的缓存命中率能到 90%？》包含 7×5 和 4×2 两个结构完整的数据表，但首行使用 <td> 而不是 <th> 。旧规范化规则把所有无 <th> 表格当成 Newsletter 布局容器，导致两张表在渲染前被摊平成正文。 决策：布局表格清理改用保守的结构判断。有 <th> 的表格直接保留；无 <th> 时，至少两行两列、列数稳定、无嵌套、文本单元格占主导且非媒体主导的网格也保留。其余明确像布局容器的表格继续扁平化。 后果：修复不依赖订阅源、文章标题或具体文本，正确的 td-only 数据表可以进入现有表格渲染器，Newsletter 单单元格/嵌套布局仍保持轻量。 未来方向：如果表格与其他富文本清洗需求继续分化，应把阅读渲染规范化和 LLM 输入清洗拆成独立管线与缓存；本轮不扩大到该架构重构。 避免会改变布局的图片 hover 背景：macOS 图片 hover 缩小/边框效果会移动后续文字，造成明显布局不稳定。 决策：macOS 图片 hover 不应改变图片布局尺寸；用光标表达可点击。 后果：文章文字保持稳定，同时图片仍有可点击提示。 选择性使用 Liquid Glass 背景：全局铺开 Liquid Glass 会造成可读性和 macOS 性能问题，尤其是在密集重复 UI 中。 决策：有意义的浮动控件/表面可以使用玻璃；密集设置、任务中心、未读标签和重复装饰使用轻量描边/静态样式。 后果：应用保留设计方向，同时避免重现 v1.1.25 风格的性能回归。 不在 Flutter 中追求真实外部背景取色边框 背景：用户希望边框高光颜色来自应用窗口后方真实内容。Flutter 绘制无法可靠采样这些像素；NSVisualEffectView/系统 compositor 才拥有这部分模糊。 决策：放弃 Flutter-only 的真实外部背景取色边框。未来如果要做，应作为 native/AppKit renderer 实验。 后果：当前玻璃边框使用实用的白色/高光样式，不假装采样不可得像素。 macOS 中间 header 保持轻量 背景：中间时间线/列表 header 的玻璃背景增加视觉重量，也可能影响性能。后续细线分隔也被取消。 决策：除非明确重新讨论，否则 macOS 中间栏 header 不使用玻璃背景。 后果：中间列表 chrome 保持安静且不显示底部分隔线；文章详情独立保留细分隔线和阅读进度。 macOS 圆角收敛按层级联动 背景：用户希望 macOS 整体圆角略微变小，同时文章卡片圆角略微增大。此前调研 Apple 官方资料后，没有找到普通 macOS app 的固定圆角数值规范；官方更强调圆角同心性、容器关系和系统控件自适应。 决策：第一阶段只收敛主几何层和大面板：窗口/Flutter 外框 24 ，红黄绿圆心 24 ，侧边栏面板 18 ， AppGlassSurface 默认 16 ， AppGlassPanel 默认 18 ，突出面板 20 ，macOS 文章卡片 10 。分屏文章右下角安全裁剪同步外框半径。 后果：红黄绿、外框、侧边栏和右下角文章裁剪必须联动维护。不要把“圆角收敛”扩展成全局搜索替换。 不要回退"
@@ -4355,6 +4367,10 @@ window.WIKI_SEARCH_INDEX = [
     "text": "2026-09-03 macOS 相关文章恢复过渡并修正退场层叠"
    },
    {
+    "id": "2026-09-03-文章摘要选择跨后台更新保持",
+    "text": "2026-09-03 文章摘要选择跨后台更新保持"
+   },
+   {
     "id": "2026-08-31-android-最近阅读顶部避让",
     "text": "2026-08-31 Android 最近阅读顶部避让"
    },
@@ -4447,7 +4463,7 @@ window.WIKI_SEARCH_INDEX = [
     "text": "常规检查"
    }
   ],
-  "text": "验证记录 2026-09-02 macOS 相关文章详情切换闪烁 本节记录 2026-09-02 为隔离闪烁根因采用的阶段性零时长稳定化；2026-09-03 已恢复受控的内容过渡，当前实现和最终验证见下方记录。 用户现象：从文章内点击关联文章时，右侧详情在切换过程中出现闪烁；从相关文章按 Esc 返回，或按 M 标记已读并自动返回时也出现闪烁。 代码定位：macOS 使用 MacArticleDetailStack 的嵌套 Navigator ，旧详情保持挂载；旧 _openRelatedArticle() 却为完整 ArticlePageView 设置了 160ms 正向、 140ms 反向的 FadeTransition + SlideTransition 。目标页创建新的 ArticleController 后，正文还会先由 isParsingContent 显示 loading，再由 Isolate.run() 完成规范化和 chunk 解析；整页转场因此同时暴露旧页面、新页 loading 和新页正文，形成闪烁。 Esc 走同一个路由的反向转场。 M 的额外叠加因素： ArticlePageView 先同步修改本地读状态、read-sync、Hive/列表通知和 isRead ，随后 ArticleNavigationPolicy 立即调用相关文章返回回调，读状态刷新与 Navigator.pop 落在同一事件/帧内，放大了视觉抖动。 修复： MacArticleDetailStack 的相关文章 PageRouteBuilder 改为零时长， transitionsBuilder 直接返回 child；保留嵌套 Navigator ，不替换外层选中文章，继续保留上一层滚动/目录/显示状态。 onClose / Esc 直接弹出； onMarkedReadAndReturn 改走带 mounted 守卫的 WidgetsBinding.addPostFrameCallback ，先完成当前帧的读状态更新再返回。普通文章下一篇、恢复未读、Android 全屏路由和主时间线的行级退场动画不变。 自动验证：本次生产改动后最终运行 flutter test --no-pub ，291 项全部通过； dart analyze lib/pages/article/article_page.dart 为 No issues found! 。更大范围的 flutter analyze lib test 未发现本次改动的 error/warning，但仓库已有 59 条 prefer_initializing_formals info，因此命令按项目现有规则以非零状态结束。 git diff --check 与文档 scripts/docs.sh check 均通过。专门把真实 ArticlePageView 挂入 widget test 的尝试会启动文章图片缓存清理/缓存管理器生命周期，在 Flutter 测试 teardown 留下计时器并挂起，因此没有保留不稳定的测试；该限制不替代 macOS 真机视觉验证。 仍需用户在 macOS Debug/Release 运行包含本改动的构建，至少确认：点击一层/多层相关文章无整页闪烁； Esc 每次只退一层且上一层滚动位置保留；相关文章按 M 或右下角标为已读后先完成状态更新再无闪烁返回；普通文章的 M 下一篇和主时间线 180ms 行级动画不受影响。 2026-09-03 macOS 相关文章恢复过渡并修正退场层叠 用户在确认零时长版本消除了闪烁后，又反馈点击进入和 Esc / M 返回完全瞬时、观感生硬；随后进一步描述返回时“整个右侧区域短暂变暗/变空，然后旧文章出现”。排查结论是路由方向的层叠问题：如果把不透明 ColoredBox(surface) 和正在淡出的顶层 child 一起处理，pop 时 surface 会先离开或遮住旧文章，旧文章只能在暗/空层之后显现。 最终修复集中在 _MacArticleDetailStackState._openRelatedArticle() ：push 使用 160ms 、约 2.5% 水平滑入，前景 child 外保持 Theme.of(context).colorScheme.surface 不透明表面，并用 easeOutCubic 淡入；pop 使用 140ms 反向滑出/淡出，在明确的 AnimationStatus.reverse 时去掉该表面，直接让当前文章离开并露出仍挂载的上一层文章。反向 slide 使用 easeInCubic ，反向 fade 使用 easeInOutCubic ，避免 easeInCubic 在退场前段过快掉透明度。 AnimatedBuilder 复用已构建的淡入 child；初始 dismissed 状态仍按 push 处理，避免首帧绕过不透明表面。相关文章 M /工具栏标为已读继续经 _popRelatedArticleAfterFrame() 在当前帧后弹出，使本地读状态、Hive/read-sync、角标和跨页面通知先完成； Esc 直接进入同一反向过渡。 本次明确不改动：macOS 右侧嵌套 Navigator 、上一层详情的滚动/目录/解析状态、Android 全屏相关文章路由、主时间线和垃圾拦截的行级动画、普通文章下一篇策略、恢复未读语义及正文 parser/rendering。这里解决的是相关文章详情路由的“有过渡但不透明交叉淡化”。 当前最终工作树验证： dart format --output=none --set-exit-if-changed lib/pages/article/article_page.dart 通过且无格式变化； dart analyze 退出码为 0，仅报告仓库已有的 67 条 info；完整 flutter test --no-pub 针对最终代码通过 291 项； flutter build macos --debug 成功生成 build/macos/Build/Products/Debug/Fourier.app ； scripts/docs.sh index 与 scripts/docs.sh check 通过（59 页、0 warnings）； git diff --check 通过。构建输出中的 AVKeyValueStatus deprecated 是 video_player_avfoundation 依赖的既有 macOS 警告，不属于本次改动。 仍需真实 macOS 窗口视觉确认：一层/多层关联文章点击、 Esc 逐层返回、 M /工具栏标为已读返回，以及确认右侧区域在 pop 全程保持旧文章可见而不短暂暗/空。若视觉仍异常，应继续检查 route overlay 与旧页面的 compositing，不要直接回退到透明整页 FadeTransition 或把零时长当作最终体验。 2026-08-31 Android 最近阅读顶部避让 根因确认：最近阅读共用了顶栏视觉组件，但列表调用 _bu"
+  "text": "验证记录 2026-09-02 macOS 相关文章详情切换闪烁 本节记录 2026-09-02 为隔离闪烁根因采用的阶段性零时长稳定化；2026-09-03 已恢复受控的内容过渡，当前实现和最终验证见下方记录。 用户现象：从文章内点击关联文章时，右侧详情在切换过程中出现闪烁；从相关文章按 Esc 返回，或按 M 标记已读并自动返回时也出现闪烁。 代码定位：macOS 使用 MacArticleDetailStack 的嵌套 Navigator ，旧详情保持挂载；旧 _openRelatedArticle() 却为完整 ArticlePageView 设置了 160ms 正向、 140ms 反向的 FadeTransition + SlideTransition 。目标页创建新的 ArticleController 后，正文还会先由 isParsingContent 显示 loading，再由 Isolate.run() 完成规范化和 chunk 解析；整页转场因此同时暴露旧页面、新页 loading 和新页正文，形成闪烁。 Esc 走同一个路由的反向转场。 M 的额外叠加因素： ArticlePageView 先同步修改本地读状态、read-sync、Hive/列表通知和 isRead ，随后 ArticleNavigationPolicy 立即调用相关文章返回回调，读状态刷新与 Navigator.pop 落在同一事件/帧内，放大了视觉抖动。 修复： MacArticleDetailStack 的相关文章 PageRouteBuilder 改为零时长， transitionsBuilder 直接返回 child；保留嵌套 Navigator ，不替换外层选中文章，继续保留上一层滚动/目录/显示状态。 onClose / Esc 直接弹出； onMarkedReadAndReturn 改走带 mounted 守卫的 WidgetsBinding.addPostFrameCallback ，先完成当前帧的读状态更新再返回。普通文章下一篇、恢复未读、Android 全屏路由和主时间线的行级退场动画不变。 自动验证：本次生产改动后最终运行 flutter test --no-pub ，291 项全部通过； dart analyze lib/pages/article/article_page.dart 为 No issues found! 。更大范围的 flutter analyze lib test 未发现本次改动的 error/warning，但仓库已有 59 条 prefer_initializing_formals info，因此命令按项目现有规则以非零状态结束。 git diff --check 与文档 scripts/docs.sh check 均通过。专门把真实 ArticlePageView 挂入 widget test 的尝试会启动文章图片缓存清理/缓存管理器生命周期，在 Flutter 测试 teardown 留下计时器并挂起，因此没有保留不稳定的测试；该限制不替代 macOS 真机视觉验证。 仍需用户在 macOS Debug/Release 运行包含本改动的构建，至少确认：点击一层/多层相关文章无整页闪烁； Esc 每次只退一层且上一层滚动位置保留；相关文章按 M 或右下角标为已读后先完成状态更新再无闪烁返回；普通文章的 M 下一篇和主时间线 180ms 行级动画不受影响。 2026-09-03 macOS 相关文章恢复过渡并修正退场层叠 用户在确认零时长版本消除了闪烁后，又反馈点击进入和 Esc / M 返回完全瞬时、观感生硬；随后进一步描述返回时“整个右侧区域短暂变暗/变空，然后旧文章出现”。排查结论是路由方向的层叠问题：如果把不透明 ColoredBox(surface) 和正在淡出的顶层 child 一起处理，pop 时 surface 会先离开或遮住旧文章，旧文章只能在暗/空层之后显现。 最终修复集中在 _MacArticleDetailStackState._openRelatedArticle() ：push 使用 160ms 、约 2.5% 水平滑入，前景 child 外保持 Theme.of(context).colorScheme.surface 不透明表面，并用 easeOutCubic 淡入；pop 使用 140ms 反向滑出/淡出，在明确的 AnimationStatus.reverse 时去掉该表面，直接让当前文章离开并露出仍挂载的上一层文章。反向 slide 使用 easeInCubic ，反向 fade 使用 easeInOutCubic ，避免 easeInCubic 在退场前段过快掉透明度。 AnimatedBuilder 复用已构建的淡入 child；初始 dismissed 状态仍按 push 处理，避免首帧绕过不透明表面。相关文章 M /工具栏标为已读继续经 _popRelatedArticleAfterFrame() 在当前帧后弹出，使本地读状态、Hive/read-sync、角标和跨页面通知先完成； Esc 直接进入同一反向过渡。 本次明确不改动：macOS 右侧嵌套 Navigator 、上一层详情的滚动/目录/解析状态、Android 全屏相关文章路由、主时间线和垃圾拦截的行级动画、普通文章下一篇策略、恢复未读语义及正文 parser/rendering。这里解决的是相关文章详情路由的“有过渡但不透明交叉淡化”。 当前最终工作树验证： dart format --output=none --set-exit-if-changed lib/pages/article/article_page.dart 通过且无格式变化； dart analyze 退出码为 0，仅报告仓库已有的 67 条 info；完整 flutter test --no-pub 针对最终代码通过 291 项； flutter build macos --debug 成功生成 build/macos/Build/Products/Debug/Fourier.app ； scripts/docs.sh index 与 scripts/docs.sh check 通过（59 页、0 warnings）； git diff --check 通过。构建输出中的 AVKeyValueStatus deprecated 是 video_player_avfoundation 依赖的既有 macOS 警告，不属于本次改动。 仍需真实 macOS 窗口视觉确认：一层/多层关联文章点击、 Esc 逐层返回、 M /工具栏标为已读返回，以及确认右侧区域在 pop 全程保持旧文章可见而不短暂暗/空。若视觉仍异常，应继续检查 route overlay 与旧页面的 compositing，不要直接回退到透明整页 FadeTransition 或把零时长当作最终体验。 2026-09-03 文章摘要选择跨后台更新保持 flutter_html 在未显式传入 anchorKey 时"
  },
  {
   "path": "index.html",

@@ -177,6 +177,29 @@ HTML 空段规范化：
 - 表格和代码块使用自己的纯文本/表格渲染路径，本轮不改。不要把所有 HTML 粗暴转成纯文本，也不要给正文插入零宽哨兵字符；前者会丢失链接和排版，后者不能修正嵌套 selectable 的偏移结构。
 - 回归测试必须断言选区中包含真实单词，不能只断言 `SelectedContent` 非空，否则 Android 的 U+FFFC 会造成假通过。列表样本必须使用常见的 `<li><p>…</p></li>`，不能只覆盖简化的 `<li>…</li>`；当前覆盖 macOS 段落、标题、引用、包含链接和已有 `<br><br>` 的 blockquote 换行、列表鼠标拖选，以及 Android 段落、序号列表长按选择、列表续行悬挂缩进和嵌套 marker。
 
+
+<a id="article-selection-stability"></a>
+## 选择结果跨异步刷新保持稳定
+
+这次问题分成两个连续暴露的层次，不能把它们都归结为“SelectionArea 不稳定”：
+
+- 第一阶段的现象是摘要/正文一开始勾选不上，偶尔成功后还会同时出现全文框和局部框。最小复现确认文章级 `SelectionArea` 本身可以工作，真正的第一层根因是 `flutter_html 3.0.0` 为块级 `html/body/div/p/ul/ol/li` 生成了以 `WidgetSpan` 开头的 nested `RichText`。正文兼容层因此把 parser 已经拆出的文本块中的冗余块级 wrapper 改为 inline；空 chunk 防线则负责避免零字符 `Text.rich` 进入选择树。
+- 第二阶段的现象是鼠标松开后高光暂时保留，但另一篇文章被标记垃圾、后台任务完成，或等待一段时间后，高光自行消失。之前把相关文章状态从全局 `ArticleStateNotifier` 依赖改为每篇文章局部观察，只能减少一个重建来源，现象仍在，说明问题不是普通 repaint 本身。
+- 依赖源码核对确认：`flutter_html` 的 `Html` 构造函数在没有收到 `anchorKey` 时每次创建新的内部 `GlobalKey`，并把它传给 `HtmlParser`；`HtmlParser` 状态没有实现 `didUpdateWidget`。因此父级即使传入完全相同的 HTML，只要重新构造了新的 `Html()`，旧 parser 和 `RenderParagraph` 仍可能被替换。选区绑定的是旧 selectable/render object，旧节点从树中移除后高光自然消失；这不是可以靠 repaint 或 `RepaintBoundary` 保住的绘制状态。
+- 触发链也在 GetX 记录容器中找到：`SummaryService` 和 `TranslationService` 原来用 `RxMap` 保存记录。UI 读取 `_records[entryId]` 时会订阅整个 map，而不是只订阅该 entry；任意文章的摘要/翻译状态变化都会让当前文章的 `Obx` 重建。摘要/翻译后台任务有延迟，所以用户看到的“另一篇文章动作”或“过了一会儿才消失”正好符合这条链。
+
+最终修复：
+
+- 新增 `StableSelectableHtml`，内部持有稳定的 `anchorKey` 并转交给 `Html`。父级用同一文章、同一 HTML 和同一渲染配置重建时，parser、`RenderParagraph` 和选区保持原实例；`data` 或显式 `renderConfigurationKey` 改变时才轮换 key，刻意让旧内容卸载并建立新 parser，避免因为错误复用而显示旧 HTML。
+- `SummaryService`、`TranslationService` 的记录数据改为普通 `Map`，为每个 entry 提供 `versionFor(entryId)`；写入、pending、删除和账号切换清理都会通知对应 entry。原有 aggregate `recordsVersion` 仍保留，只有任务中心等需要汇总计数的观察者使用它。
+- 文章详情摘要、文章卡片摘要、垃圾拦截审核行摘要/译文、详情工具栏和 `ArticleController` 都改为观察当前 entry 的 version；不再让当前文章 UI 因另一篇文章的 AI 记录变化而重建。相关文章状态同样由每个关系项的 articleId 局部读取。正文 `HtmlChunkCard` 已经缓存真实 `Html` widget，本轮保留其缓存，不要把它改回每次 build 新建。
+
+边界与后续排查规则：
+
+- 同一 data/config 的父级 rebuild 不得主动换 `StableSelectableHtml` 的 key；否则会重新创建 parser 并清除选择。摘要正文、主题亮度、主题色等影响布局或样式的输入真正变化时，必须传入新的 `renderConfigurationKey`，此时清除旧选区是正确的，因为旧字符位置不再保证对应新内容。
+- 当前文章内容 UI 应观察 entry 级 version，而不是为了方便重新读取 aggregate `recordsVersion`。新增摘要/翻译展示点时，先确认是否应只响应一个 entry，再选择对应 service 的 `versionFor`。
+- 不要删除文章级 `SelectionArea`、把全文转换成纯文本、加入零宽哨兵，或把高光另存为业务状态；这些方案要么损失链接/排版，要么不能解决 nested selectable/remount。升级 Flutter 或 `flutter_html` 后，先运行现有跨平台选择测试，再决定是否能删除兼容层或稳定 wrapper。
+
 来源兼容规则：
 
 - 依赖站点 CSS 才能成立的窄兼容修复集中放在 `ArticleContentCompatibility`，由 `ArticleContentUtils.normalizeHtml()` 在通用安全清洗后、图片 URL 规范化前调用。不要把来源判断散落到 `HtmlChunkParser` 或普通图片 widget，也不要为单一规则引入动态规则引擎。

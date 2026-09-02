@@ -44,6 +44,7 @@ import '../../services/summary_service.dart';
 import '../../services/article_state_notifier.dart';
 import '../../utils/article_content_utils.dart';
 import '../../utils/html_chunk_parser.dart';
+import '../../utils/selectable_html_compatibility.dart';
 import '../../utils/storage.dart';
 import '../../services/undo_service.dart';
 import '../timeline/timeline_controller.dart';
@@ -53,6 +54,7 @@ import 'widgets/html_chunk_card.dart';
 import 'package:flutter_html/flutter_html.dart';
 
 import 'widgets/image_gallery_page.dart';
+import 'widgets/stable_selectable_html.dart';
 import '../../common/widgets/hero_dialog_route.dart';
 
 enum _ArticleSyncResult { success, failed, staleAccount }
@@ -88,7 +90,7 @@ class ArticleController extends GetxController {
   void onInit() {
     super.onInit();
     _translationRecordWorker = ever(
-      TranslationService.recordsVersion,
+      TranslationService.versionFor(article.entryId),
       (_) => _refreshTranslationFromService(),
     );
     isRead.value =
@@ -3204,7 +3206,6 @@ class _ArticleRelationsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       ArticleRelationService.recordsVersion.value;
-      ArticleStateNotifier.version.value;
       final direct = ArticleRelationService.directRelationsFor(article.entryId);
       if (direct.isEmpty) return const SizedBox.shrink();
       final component = ArticleRelationService.componentFor(article.entryId);
@@ -3315,14 +3316,6 @@ class _ArticleRelationRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final local = item.article;
-    final (status, handled) = local == null
-        ? ('仅原文', true)
-        : local.isRejectedByAi
-        ? (local.isRead ? '已移除' : '待审核', local.isRead)
-        : local.isRead
-        ? ('已读', true)
-        : ('未读', false);
     final imageUrl = item.node.feedImage;
     final relationColor = item.kind == ArticleRelationKind.equivalent
         ? cs.primary
@@ -3409,19 +3402,9 @@ class _ArticleRelationRow extends StatelessWidget {
                         fontSize: 10,
                       ),
                       const SizedBox(width: 4),
-                      PillTag(
-                        label: status,
-                        backgroundColor: handled
-                            ? cs.onSurface.withValues(alpha: 0.07)
-                            : cs.primary.withValues(alpha: 0.12),
-                        foregroundColor: handled
-                            ? cs.onSurfaceVariant.withValues(alpha: 0.78)
-                            : cs.primary,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1.5,
-                        ),
-                        fontSize: 10,
+                      _ArticleRelationStatus(
+                        articleId: item.node.articleId,
+                        fallback: item.article,
                       ),
                     ],
                   ),
@@ -3438,6 +3421,40 @@ class _ArticleRelationRow extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _ArticleRelationStatus extends StatelessWidget {
+  const _ArticleRelationStatus({required this.articleId, this.fallback});
+
+  final String articleId;
+  final ArticleModel? fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      ArticleStateNotifier.versionFor(articleId).value;
+      final local = LocalArticleDbService.readArticle(articleId) ?? fallback;
+      final (status, handled) = local == null
+          ? ('仅原文', true)
+          : local.isRejectedByAi
+          ? (local.isRead ? '已移除' : '待审核', local.isRead)
+          : local.isRead
+          ? ('已读', true)
+          : ('未读', false);
+      final cs = Theme.of(context).colorScheme;
+      return PillTag(
+        label: status,
+        backgroundColor: handled
+            ? cs.onSurface.withValues(alpha: 0.07)
+            : cs.primary.withValues(alpha: 0.12),
+        foregroundColor: handled
+            ? cs.onSurfaceVariant.withValues(alpha: 0.78)
+            : cs.primary,
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+        fontSize: 10,
+      );
+    });
   }
 }
 
@@ -3483,10 +3500,12 @@ class _ToolbarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
+      TranslationService.versionFor(controller.article.entryId).value;
       final rec = TranslationService.recordOf(controller.article.entryId);
       final isPending =
           (rec?.isPending ?? false) || controller.isTranslating.value;
       final hasTranslation = controller.isTranslated.value;
+      SummaryService.versionFor(controller.article.entryId).value;
       final summaryRecord = SummaryService.recordOf(controller.article.entryId);
       final isSummaryPending =
           (summaryRecord?.isPending ?? false) || controller.isSummarizing.value;
@@ -3696,10 +3715,12 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
+      SummaryService.versionFor(controller.article.entryId).value;
       final record = SummaryService.recordOf(controller.article.entryId);
       final summary = (record?.summaryText ?? '').trim();
       if (!controller.showSummary.value) return const SizedBox.shrink();
       if (summary.isEmpty) return const SizedBox.shrink();
+      final htmlData = SelectableHtmlCompatibility.normalizeTextFlow(summary);
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Container(
@@ -3734,12 +3755,26 @@ class _SummaryCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Html(
-                data: summary,
+              StableSelectableHtml(
+                data: htmlData,
+                renderConfigurationKey: Object.hash(
+                  Theme.of(context).brightness,
+                  Theme.of(context).colorScheme.primary,
+                ),
                 style: {
+                  // Html 会把 block wrapper 转为 WidgetSpan；与外层
+                  // SelectionArea 组合时必须让根节点和摘要文本保持同一流。
+                  'html': Style(display: Display.inline),
                   'body': Style(
+                    display: Display.inline,
                     fontSize: FontSize(14),
                     lineHeight: const LineHeight(1.5),
+                    margin: Margins.zero,
+                    padding: HtmlPaddings.zero,
+                  ),
+                  'div': Style(display: Display.inline),
+                  'p': Style(
+                    display: Display.inline,
                     margin: Margins.zero,
                     padding: HtmlPaddings.zero,
                   ),

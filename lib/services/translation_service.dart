@@ -88,9 +88,12 @@ abstract final class TranslationService {
     ),
   );
 
-  static final RxMap<String, TranslationRecord> _records =
-      <String, TranslationRecord>{}.obs;
+  // Reading a value from an RxMap subscribes the caller to the whole map.
+  // Keep records plain and expose per-entry versions so an unrelated
+  // translation cannot rebuild every article card.
+  static final Map<String, TranslationRecord> _records = {};
   static final recordsVersion = 0.obs;
+  static final Map<String, RxInt> _recordVersions = {};
   static final Map<String, Future<TranslationRecord>> _inFlight = {};
   static bool _hydrated = false;
   static String? _apiKey;
@@ -163,6 +166,16 @@ abstract final class TranslationService {
     _hydrated = true;
   }
 
+  /// Reactive version for exactly one article's translation record.
+  static RxInt versionFor(String entryId) {
+    return _recordVersions.putIfAbsent(entryId, () => 0.obs);
+  }
+
+  static void _notifyRecordChanged(String entryId) {
+    versionFor(entryId).value++;
+    recordsVersion.value++;
+  }
+
   static TranslationRecord? recordOf(String entryId) {
     try {
       ensureHydrated();
@@ -184,6 +197,7 @@ abstract final class TranslationService {
 
   static int countByStatus(TranslationStatus status) {
     ensureHydrated();
+    recordsVersion.value;
     return _records.values.where((record) => record.status == status).length;
   }
 
@@ -191,6 +205,7 @@ abstract final class TranslationService {
     TranslationStatus status,
   ) {
     ensureHydrated();
+    recordsVersion.value;
     return Map.unmodifiable(
       Map.fromEntries(
         _records.entries.where((entry) => entry.value.status == status),
@@ -208,7 +223,7 @@ abstract final class TranslationService {
       status: TranslationStatus.pending,
       updatedAt: DateTime.now().millisecondsSinceEpoch,
     );
-    recordsVersion.value++;
+    _notifyRecordChanged(entryId);
     // pending 不落盘 — 瞬态，重启后无需恢复
   }
 
@@ -280,6 +295,7 @@ abstract final class TranslationService {
               errorMessage: null,
               updatedAt: DateTime.now().millisecondsSinceEpoch,
             );
+    _notifyRecordChanged(article.entryId);
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,
@@ -722,14 +738,18 @@ abstract final class TranslationService {
     ensureHydrated();
     _records.remove(entryId);
     await GStorage.translations.delete(entryId);
-    recordsVersion.value++;
+    _notifyRecordChanged(entryId);
   }
 
   static void resetForAccountChange() {
+    final affectedIds = <String>{..._records.keys, ..._recordVersions.keys};
     _records.clear();
     _inFlight.clear();
     _hydrated = false;
     recordsVersion.value++;
+    for (final entryId in affectedIds) {
+      versionFor(entryId).value++;
+    }
   }
 
   static Future<void> _restoreAfterFailure(
@@ -774,7 +794,7 @@ abstract final class TranslationService {
     ensureHydrated();
     _records[entryId] = record;
     await GStorage.translations.put(entryId, record.toJson());
-    recordsVersion.value++;
+    _notifyRecordChanged(entryId);
   }
 
   static String _cleanTranslatedContent(String raw) {

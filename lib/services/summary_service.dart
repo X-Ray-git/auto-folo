@@ -90,8 +90,12 @@ abstract final class SummaryService {
   })?
   debugPostOverride;
 
-  static final RxMap<String, SummaryRecord> _records =
-      <String, SummaryRecord>{}.obs;
+  // Keep the data map non-reactive. Reading one entry from an RxMap registers
+  // the whole map as a dependency, so a summary update for any other article
+  // would rebuild the currently open article's HTML subtree.
+  static final Map<String, SummaryRecord> _records = {};
+  static final recordsVersion = 0.obs;
+  static final Map<String, RxInt> _recordVersions = {};
   static final Map<String, Future<SummaryRecord>> _inFlight = {};
   static bool _hydrated = false;
   static String? _apiKey;
@@ -145,6 +149,20 @@ abstract final class SummaryService {
     _hydrated = true;
   }
 
+  /// Reactive version for exactly one article's summary record.
+  ///
+  /// Callers that render a record inside [Obx] should observe this value and
+  /// then call [recordOf]. They will not be invalidated by another article's
+  /// summary task.
+  static RxInt versionFor(String entryId) {
+    return _recordVersions.putIfAbsent(entryId, () => 0.obs);
+  }
+
+  static void _notifyRecordChanged(String entryId) {
+    versionFor(entryId).value++;
+    recordsVersion.value++;
+  }
+
   static SummaryRecord? recordOf(String entryId) {
     try {
       ensureHydrated();
@@ -166,11 +184,13 @@ abstract final class SummaryService {
 
   static int countByStatus(SummaryStatus status) {
     ensureHydrated();
+    recordsVersion.value;
     return _records.values.where((record) => record.status == status).length;
   }
 
   static Map<String, SummaryRecord> recordsByStatus(SummaryStatus status) {
     ensureHydrated();
+    recordsVersion.value;
     return Map.unmodifiable(
       Map.fromEntries(
         _records.entries.where((entry) => entry.value.status == status),
@@ -240,6 +260,7 @@ abstract final class SummaryService {
               errorMessage: null,
               updatedAt: DateTime.now().millisecondsSinceEpoch,
             );
+    _notifyRecordChanged(article.entryId);
 
     final htmlContent = ArticleContentUtils.normalizeHtmlForEntry(
       article.entryId,
@@ -471,13 +492,19 @@ abstract final class SummaryService {
   static void deleteSummary(String entryId) {
     ensureHydrated();
     _records.remove(entryId);
+    _notifyRecordChanged(entryId);
     GStorage.summaries.delete(entryId);
   }
 
   static void resetForAccountChange() {
+    final affectedIds = <String>{..._records.keys, ..._recordVersions.keys};
     _records.clear();
     _inFlight.clear();
     _hydrated = false;
+    recordsVersion.value++;
+    for (final entryId in affectedIds) {
+      versionFor(entryId).value++;
+    }
   }
 
   static void _restoreAfterFailure(
@@ -519,6 +546,7 @@ abstract final class SummaryService {
     }
     ensureHydrated();
     _records[entryId] = record;
+    _notifyRecordChanged(entryId);
     GStorage.summaries.put(entryId, record.toJson());
   }
 
@@ -531,6 +559,7 @@ abstract final class SummaryService {
     if (!AccountSessionGuard.isCurrent(accountRevision)) return;
     ensureHydrated();
     _records[article.entryId] = record;
+    _notifyRecordChanged(article.entryId);
     await GStorage.summaries.put(article.entryId, record.toJson());
     if (!AccountSessionGuard.isCurrent(accountRevision)) return;
     try {

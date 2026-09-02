@@ -24,6 +24,7 @@ import '../../../utils/youtube_embed_utils.dart';
 import '../../../utils/html_contrast_utils.dart';
 import '../../../utils/image_clipboard.dart';
 import '../../../utils/macos_zoom_in_cursor.dart';
+import '../../../utils/selectable_html_compatibility.dart';
 import '../../../services/article_image_service.dart';
 import '../../../services/animation_activity_monitor.dart';
 import '../../../services/article_image_cache_service.dart';
@@ -1137,22 +1138,30 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
   // ── 兜底 HTML ──
 
   Widget _buildRawHtml(BuildContext context, ColorScheme cs) {
+    final usesSelectionWorkaround = _usesHtmlSelectionWorkaround(context);
+    var htmlData = Theme.of(context).brightness == Brightness.dark
+        ? HtmlContrastUtils.adjustHtmlContrast(widget.chunk.content, cs.surface)
+        : widget.chunk.content;
+    if (usesSelectionWorkaround) {
+      htmlData = SelectableHtmlCompatibility.normalizeTextFlow(htmlData);
+    }
     return Html(
-      data: Theme.of(context).brightness == Brightness.dark
-          ? HtmlContrastUtils.adjustHtmlContrast(
-              widget.chunk.content,
-              cs.surface,
-            )
-          : widget.chunk.content,
+      data: htmlData,
       onLinkTap: _handleLinkTap,
       style: {
+        if (usesSelectionWorkaround) 'html': Style(display: Display.inline),
         'body': Style(
+          display: usesSelectionWorkaround ? Display.inline : null,
           fontSize: FontSize(16),
           lineHeight: const LineHeight(1.7),
           color: cs.onSurface,
           margin: Margins.zero,
           padding: HtmlPaddings.zero,
         ),
+        if (usesSelectionWorkaround) ...{
+          'div': Style(display: Display.inline),
+          'p': Style(display: Display.inline),
+        },
         'a': Style(color: cs.primary),
         'code': _inlineCodeStyle(),
       },
@@ -1725,8 +1734,7 @@ class _ImageErrorWidget extends StatelessWidget {
   }
 }
 
-/// 行内代码自定义扩展 — 使用 alphabetic baseline 对齐，
-/// 替代 TagWrapExtension 的 bottom 对齐 + Transform.translate 补偿方案。
+/// 行内代码保持在周围文字的同一个选择流中。
 class InlineCodeExtension extends HtmlExtension {
   final ColorScheme colorScheme;
   const InlineCodeExtension({required this.colorScheme});
@@ -1763,29 +1771,12 @@ class InlineCodeExtension extends HtmlExtension {
 
   @override
   InlineSpan build(ExtensionContext context) {
-    final child = CssBoxWidget.withInlineSpanChildren(
-      children: context.inlineSpanChildren!,
-      style: context.style!,
-    );
-
-    return WidgetSpan(
-      alignment: PlaceholderAlignment.baseline,
-      baseline: TextBaseline.alphabetic,
-      child: Container(
-        // 仅 macOS 收窄行内代码的垂直内边距（2→1），Android 保持不变；
-        // 字号、baseline、横向 padding 与块级代码不受影响。
-        padding: EdgeInsets.symmetric(
-          horizontal: 4,
-          vertical: Platform.isMacOS ? 1 : 2,
-        ),
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: child,
+    final style = context.style!.generateTextStyle().copyWith(
+      backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+        alpha: 0.6,
       ),
     );
+    return TextSpan(style: style, children: context.inlineSpanChildren!);
   }
 }
 

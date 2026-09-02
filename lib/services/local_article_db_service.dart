@@ -41,6 +41,19 @@ abstract final class LocalArticleDbService {
     return items;
   }
 
+  /// Reads one article directly from the persisted store.
+  ///
+  /// This intentionally bypasses the all-article cache so small reactive
+  /// consumers can refresh one article without rebuilding a whole collection.
+  static ArticleModel? readArticle(String entryId) {
+    final raw = GStorage.articleDb.get(entryId);
+    if (raw is! Map) return null;
+    final article = ArticleModel.fromCache(Map<String, dynamic>.from(raw));
+    final override = readOverrideOf(entryId);
+    if (override == null || override == article.isRead) return article;
+    return article.copyWith(isRead: override);
+  }
+
   static bool? readOverrideOf(String entryId) {
     final raw = GStorage.readStatus.get(entryId);
     if (raw is bool) return raw;

@@ -1521,6 +1521,16 @@
 - 不要删除、重算或覆盖修复前的 `llmUsageEvents`；用时间边界区分历史和修复后的真实数据。
 </details>
 
+## 摘要选择稳定性采用逐文章通知和稳定 parser（2026-09-03）
+
+背景：正文块级选择兼容完成后，摘要选区仍可能在另一篇文章的摘要、翻译或状态异步更新时消失。根因有两层：`SummaryService`/`TranslationService` 的 `RxMap` 下标读取会订阅整张表；`flutter_html` 未传稳定 `anchorKey` 时，父级重建会替换 parser 和选择节点。
+
+决策：两个 AI service 使用普通记录 Map，并分别提供文章级 `versionFor(entryId)`；聚合 `recordsVersion` 只服务任务中心统计。摘要使用 `StableSelectableHtml`，仅在 HTML 数据或显式渲染配置改变时轮换 key。合并审查修正了文章卡片误订阅摘要版本却读取翻译状态的问题，并明确同时订阅当前文章的翻译和摘要版本。
+
+边界：保留现有 `SelectableHtmlList` 和 blockquote DOM 感知间距，不恢复旧的 `normalizeList` marker 拼接。文本流兼容函数仅用于摘要和兜底文本型 HTML；行内代码使用 `TextSpan` 留在周围文字的同一选择流。逐文章版本对象在账号切换时统一失效，当前不承担业务数据持久化。
+
+后果：无关文章的后台任务不再重建当前摘要，内容未变时选择高光得以保持；真实内容或主题配置改变仍会正确刷新 parser。后续升级 Flutter 或 `flutter_html` 时，应先运行稳定 parser、正文选择、列表续行和跨列表项选择测试，不能只验证选区非空。
+
 </script>
 <script src="../assets/wiki-common.js"></script>
 <script src="../assets/vendor/markdown-it.min.js"></script>

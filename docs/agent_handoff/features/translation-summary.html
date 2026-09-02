@@ -177,10 +177,19 @@ UI 注意点：
 - 灰色非激活按钮 hover 时不应闪烁；hover 只轻微改变边框。
 - 从卡片右键菜单删除摘要后，文章详情必须立即更新。`SummaryService` 记录删除后，不要回退到过期 controller summary text。
 - 卡片右键操作会直接调用 service 方法；确保跨页面 UI 观察 service 状态或 notifier 状态。
-- 文章在详情页打开后，后台译文仍可能稍后完成。`ArticleController` 监听 `TranslationService.recordsVersion`，只为当前文章解析最终译文并刷新 `translatedChunks`；删除译文也必须清理详情页旧状态。不要重新把是否已有译文只固定在控制器初始化时判断。
+- 文章在详情页打开后，后台译文仍可能稍后完成。`ArticleController` 监听 `TranslationService.versionFor(article.entryId)`，只为当前文章解析最终译文并刷新 `translatedChunks`；删除译文也必须清理详情页旧状态。不要重新把是否已有译文只固定在控制器初始化时判断，也不要让当前详情依赖 aggregate `recordsVersion`。
 - 文章列表里的长按/右键 AI 菜单由 `lib/pages/widgets/article_actions_menu.dart` 统一维护。
 - 普通时间线卡片和垃圾拦截审核行都应通过 `ArticleActionsMenu` 提供翻译、删除翻译、生成摘要、删除摘要。这样新增或修复文章级 AI 动作时不需要同时改两套页面。
 - `ArticleActionsMenu` 只封装文章级动作和反馈，不拥有文章详情状态；删除翻译/摘要后的可见刷新仍依赖 service/notifier 和页面已有观察链路。
+
+
+<a id="article-ai-selection"></a>
+## 文章级状态通知与摘要选区
+
+- `SummaryService` 与 `TranslationService` 的记录 map 是普通 `Map`，不是 `RxMap`。GetX 的 `RxMap` 下标读取会把整个 map 注册为依赖，任何文章的记录变化都会令所有读取者失效；普通 map 将“数据存储”和“是否重建”的信号分开。
+- 两个 service 都通过 `versionFor(entryId)` 提供文章级 `RxInt`。当前文章详情、文章卡片、垃圾拦截审核行和详情控制器只观察自己的 entry；pending、完成、错误、删除和账号切换清理都必须触发对应 version。`recordsVersion` 只为任务中心的 done/pending/error 等聚合计数保留，不能拿它替代文章级观察。
+- 摘要 HTML 位于文章级 `SelectionArea` 内，使用 `StableSelectableHtml` 传入稳定 `anchorKey`。相同摘要内容和渲染配置下的父级重建保留 `flutter_html` parser 与选区；摘要文字或主题渲染配置改变时轮换 key，让新 HTML 正确解析。不要直接在这些位置重新构造无稳定 key 的 `Html`。
+- 这套边界解释了为何“另一篇文章被标记垃圾”或“后台任务延迟完成”会表现为当前摘要高光消失：事件本身不是清除选区的业务动作，而是触发了全局 `RxMap` 依赖的重建，重建又替换了旧 parser。完整调查记录见[文章渲染专题](article-rendering.html#article-selection-stability)。
 
 ## 翻译持久化时序
 

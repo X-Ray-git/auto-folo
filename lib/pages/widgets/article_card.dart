@@ -20,7 +20,9 @@ import '../../services/external_link_service.dart';
 import '../../services/translation_service.dart';
 import '../../services/summary_service.dart';
 import '../../utils/source_taxonomy.dart';
+import '../../utils/selectable_html_compatibility.dart';
 import 'article_actions_menu.dart';
+import '../article/widgets/stable_selectable_html.dart';
 
 /// 文章卡片组件
 class ArticleCard extends StatefulWidget {
@@ -131,6 +133,8 @@ class _ArticleCardContentState extends State<_ArticleCardContent> {
     final categoryLabel = article.subscriptionCategory.trim();
 
     return Obx(() {
+      TranslationService.versionFor(article.entryId).value;
+      SummaryService.versionFor(article.entryId).value;
       final record = TranslationService.recordOf(article.entryId);
       final isPending = record?.isPending ?? false;
       final isTranslated =
@@ -493,8 +497,15 @@ class _ArticleCardContentState extends State<_ArticleCardContent> {
                   status == SummaryStatus.done &&
                       text != null &&
                       text.isNotEmpty
-                  ? Html(
-                      data: displayContent,
+                  ? StableSelectableHtml(
+                      data: SelectableHtmlCompatibility.normalizeTextFlow(
+                        displayContent,
+                      ),
+                      renderConfigurationKey: Object.hash(
+                        Theme.of(context).brightness,
+                        cs.primary,
+                        textColor,
+                      ),
                       style: {
                         'body': Style(
                           fontSize: FontSize(ArticleCardChrome.bodyFontSize),

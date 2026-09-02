@@ -70,6 +70,13 @@
 - 当前最终工作树验证：`dart format --output=none --set-exit-if-changed lib/pages/article/article_page.dart` 通过且无格式变化；`dart analyze` 退出码为 0，仅报告仓库已有的 67 条 info；完整 `flutter test --no-pub` 针对最终代码通过 291 项；`flutter build macos --debug` 成功生成 `build/macos/Build/Products/Debug/Fourier.app`；`scripts/docs.sh index` 与 `scripts/docs.sh check` 通过（59 页、0 warnings）；`git diff --check` 通过。构建输出中的 `AVKeyValueStatus` deprecated 是 `video_player_avfoundation` 依赖的既有 macOS 警告，不属于本次改动。
 - 仍需真实 macOS 窗口视觉确认：一层/多层关联文章点击、`Esc` 逐层返回、`M`/工具栏标为已读返回，以及确认右侧区域在 pop 全程保持旧文章可见而不短暂暗/空。若视觉仍异常，应继续检查 route overlay 与旧页面的 compositing，不要直接回退到透明整页 `FadeTransition` 或把零时长当作最终体验。
 
+## 2026-09-03 文章摘要选择跨后台更新保持
+
+- `flutter_html` 在未显式传入 `anchorKey` 时可能随父级重建替换 parser，导致仍有效的摘要选区丢失；摘要和翻译原先使用的 `RxMap` 又会让任意文章状态变化扩大为当前文章重建。
+- 修复使用 `StableSelectableHtml` 保持同一内容/渲染配置的 parser 身份，并用 `SummaryService.versionFor(entryId)`、`TranslationService.versionFor(entryId)` 和文章级状态版本缩小重建范围。任务中心继续使用聚合版本统计。
+- 合并时保留了 2026-09-02 的 `SelectableHtmlList`、blockquote DOM 间距算法，并补充兜底 HTML 与行内代码的单一选择流，避免恢复旧的列表扁平化实现。
+- 自动测试覆盖无关父级重建后 parser/真实选中文字保持、内容变化后 parser 更新、逐文章通知隔离、兜底 HTML、行内代码以及现有跨平台列表选择。主题或摘要内容真正变化时清除旧选区属于预期行为。
+
 ## 2026-08-31 Android 最近阅读顶部避让
 
 - 根因确认：最近阅读共用了顶栏视觉组件，但列表调用 `_buildListView(context)` 时传入的是独立 Scaffold 之上的 State context，只能读取状态栏 padding；透明 AppBar 的完整 inset 只存在于 Scaffold body context，因此第一张卡片拉到顶端后进入 AppBar 后方。

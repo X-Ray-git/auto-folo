@@ -1719,8 +1719,9 @@ class _MacReviewRow extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Obx(
-                        () => Text(
+                      Obx(() {
+                        TranslationService.versionFor(article.entryId).value;
+                        return Text(
                           TranslationService.displayTitleFor(article),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
@@ -1730,8 +1731,8 @@ class _MacReviewRow extends StatelessWidget {
                             fontWeight: FontWeight.w600,
                             color: selected ? cs.primary : cs.onSurface,
                           ),
-                        ),
-                      ),
+                        );
+                      }),
                       const SizedBox(height: 5),
                       Row(
                         children: [
@@ -1751,6 +1752,7 @@ class _MacReviewRow extends StatelessWidget {
                         ],
                       ),
                       Obx(() {
+                        SummaryService.versionFor(article.entryId).value;
                         final summaryRecord = SummaryService.recordOf(
                           article.entryId,
                         );

@@ -5,8 +5,20 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fourier/pages/article/widgets/html_chunk_card.dart';
 import 'package:fourier/utils/html_chunk_parser.dart';
+import 'package:fourier/utils/selectable_html_compatibility.dart';
 
 void main() {
+  test('text flow keeps inline markup and explicit block boundaries', () {
+    expect(
+      SelectableHtmlCompatibility.normalizeTextFlow(
+        '<p>First <strong>bold</strong> paragraph.</p>'
+        '<div>Second <em>italic</em> paragraph.</div>',
+      ),
+      'First <strong>bold</strong> paragraph.<br><br>'
+      'Second <em>italic</em> paragraph.',
+    );
+  });
+
   testWidgets('macOS mouse drag selects rendered article paragraph', (
     tester,
   ) async {
@@ -497,5 +509,126 @@ void main() {
 
     expect(selected?.plainText, contains('First selectable item.'));
     expect(selected?.plainText, contains('Second selectable item.'));
+  });
+
+  testWidgets('macOS raw HTML keeps one selectable text flow', (tester) async {
+    SelectedContent? selected;
+    const chunk = HtmlChunk(
+      type: HtmlChunkType.rawHtml,
+      content:
+          '<p>Raw first paragraph for selection.</p>'
+          '<p>Raw second paragraph for selection.</p>',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.macOS),
+        home: Scaffold(
+          body: SelectionArea(
+            onSelectionChanged: (value) => selected = value,
+            child: const SizedBox(
+              width: 600,
+              child: HtmlChunkCard(
+                chunk: chunk,
+                articleId: 'selection-test',
+                maxWidth: 600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final paragraphs = find
+        .byType(RichText)
+        .evaluate()
+        .map((element) => element.renderObject)
+        .whereType<RenderParagraph>()
+        .where(
+          (paragraph) =>
+              paragraph.text.toPlainText().contains('Raw first') ||
+              paragraph.text.toPlainText().contains('Raw second'),
+        )
+        .toList(growable: false);
+    expect(paragraphs, hasLength(1));
+    final paragraph = paragraphs.single;
+    final text = paragraph.text.toPlainText();
+
+    Offset textPosition(int offset) => paragraph.localToGlobal(
+      paragraph.getOffsetForCaret(
+            TextPosition(offset: offset),
+            const Rect.fromLTWH(0, 0, 2, 20),
+          ) +
+          Offset(0, paragraph.preferredLineHeight - 2),
+    );
+    final mouse = await tester.startGesture(
+      textPosition(1),
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.moveTo(textPosition(text.length - 1));
+    await mouse.up();
+    await tester.pump();
+
+    expect(selected?.plainText, contains('Raw second'));
+    expect(selected?.plainText, isNot(contains('\uFFFC')));
+  });
+
+  testWidgets('macOS inline code stays in the surrounding selection flow', (
+    tester,
+  ) async {
+    SelectedContent? selected;
+    const chunk = HtmlChunk(
+      type: HtmlChunkType.paragraph,
+      content: 'Text before <code>inline_code</code> text after.',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(platform: TargetPlatform.macOS),
+        home: Scaffold(
+          body: SelectionArea(
+            onSelectionChanged: (value) => selected = value,
+            child: const SizedBox(
+              width: 600,
+              child: HtmlChunkCard(
+                chunk: chunk,
+                articleId: 'selection-test',
+                maxWidth: 600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final paragraphs = find
+        .byType(RichText)
+        .evaluate()
+        .map((element) => element.renderObject)
+        .whereType<RenderParagraph>()
+        .toList(growable: false);
+    expect(paragraphs, hasLength(1));
+    final paragraph = paragraphs.single;
+    final text = paragraph.text.toPlainText();
+
+    Offset textPosition(int offset) => paragraph.localToGlobal(
+      paragraph.getOffsetForCaret(
+            TextPosition(offset: offset),
+            const Rect.fromLTWH(0, 0, 2, 20),
+          ) +
+          Offset(0, paragraph.preferredLineHeight - 2),
+    );
+    final mouse = await tester.startGesture(
+      textPosition(1),
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.moveTo(textPosition(text.length - 1));
+    await mouse.up();
+    await tester.pump();
+
+    expect(selected?.plainText, contains('inline_code'));
+    expect(selected?.plainText, isNot(contains('\uFFFC')));
   });
 }
