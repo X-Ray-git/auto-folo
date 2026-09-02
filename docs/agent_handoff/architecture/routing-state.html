@@ -63,6 +63,14 @@
 - Service 经常暴露静态方法，并在内部维护响应式 map。
 - `ArticleStateNotifier` 用于跨页面刷新文章状态。
 
+macOS 相关文章详情栈：
+
+- `TimelinePage`、订阅源详情、垃圾拦截和最近阅读等 macOS 分栏入口都可以通过 `MacArticleDetailStack` 在右侧详情栏内打开相关文章；`_ArticleRelationsSection` 在 macOS 走这个回调，Android 仍走独立的 `Get.toNamed(Routes.article)` 全屏路由。
+- `MacArticleDetailStack` 使用内嵌 `Navigator`。打开相关文章时保留上一层 `ArticlePageView` 挂载在路由栈中，因此上一层的滚动位置、目录状态和已解析内容可以在 `Esc` 返回后继续使用；不要为了修复视觉问题把它改成外层选中项替换或统一成 Android 的全屏路由。
+- macOS 相关文章路由在 `lib/pages/article/article_page.dart` 的 `_MacArticleDetailStackState._openRelatedArticle()` 中创建。目标页仍会独立创建 `ArticleController`，其正文会经过 `ArticleController._initContent()` 和 `Isolate.run()` 异步规范化/分块，所以路由转场不能把整个 `Scaffold`、header、loading 状态和正文一起交叉淡入淡出。
+- 当前相关文章路由使用零时长 `PageRouteBuilder`，`transitionsBuilder` 直接返回目标 child；`Esc` 直接弹出路由。相关文章页面的 `M` 或工具栏标为已读动作通过 `_popRelatedArticleAfterFrame()` 在当前帧结束后弹出，先让本地读状态、Hive/read-sync 和跨页面通知完成一帧渲染。
+- 这条延迟只用于“标为已读后返回”的相关文章回调，不改变普通文章的下一篇策略、恢复未读语义、Android 应用级返回或主时间线列表的 `180ms` 行级退场动画。完整问题链路和取舍见[决策日志](../history/decisions.html#macos-related-detail-navigation-flicker-2026-09-02)。
+
 重要体验规则：
 
 - 当 service 记录被删除时，避免继续回退到过期 controller 缓存。近期 bug：从卡片右键菜单删除摘要后，`SummaryService` 记录已删除，但文章详情仍显示缓存的 `controller.summaryText`。修复后的行为是：可见摘要状态应信任 service 记录。

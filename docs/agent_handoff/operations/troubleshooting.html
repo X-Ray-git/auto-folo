@@ -61,6 +61,20 @@ macOS release app 本地打不开：
 - 本地 release 签名/framework 加载可能因为 ad-hoc 或未知证书链失败。
 - 除非专门测试 release packaging，否则本地 UI 验证使用 debug build。
 
+macOS Release 在 Xcode Swift Package Manager 阶段无法拉取 Sparkle：
+
+- 如果 `flutter pub get` 已出现 `Got dependencies!`，随后 `xcodebuild` 在克隆 `https://github.com/sparkle-project/Sparkle` 时失败，先区分这是主机网络/代理问题，不是 Dart 或 Flutter 源码编译错误。
+- 本次复现的直接错误是 `Failed to connect to 127.0.0.1 port 7890`。Git 全局配置 `~/.gitconfig` 中的 `http.proxy`/`https.proxy` 指向 `http://127.0.0.1:7890`，但当时代理服务未监听该端口。`76 packages have newer versions...` 只是依赖版本提示，不是失败原因。
+- 若使用本地代理，启动代理并确认端口；若不使用代理，移除对应全局配置。检查方式：
+
+```bash
+git config --show-origin --get-regexp '(^|\.)http\..*proxy$|(^|\.)https\..*proxy$'
+nc -zv 127.0.0.1 7890
+git ls-remote https://github.com/sparkle-project/Sparkle.git HEAD
+```
+
+- 本次代理恢复后，7890 端口连接成功，`git ls-remote` 能返回 Sparkle 的 HEAD；再重新运行 `flutter run --release -d macos`。不要为绕过该问题关闭 Swift Package Manager 或修改应用代码。
+
 Android 安装冲突：
 
 - 包名相同但签名 key 不同会造成安装冲突。

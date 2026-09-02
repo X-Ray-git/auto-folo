@@ -785,34 +785,25 @@ class _MacArticleDetailStackState extends State<MacArticleDetailStack> {
     widget.onRelatedNavigationChanged?.call(true);
     final popped = navigator.push<void>(
       PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 160),
-        reverseTransitionDuration: const Duration(milliseconds: 140),
+        // This route replaces the whole detail surface. Fading the complete
+        // page while the destination starts parsing its content exposes the
+        // old page and the loading state in the same transition, which looks
+        // like a flash on macOS.
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
         pageBuilder: (_, _, _) => ArticlePageView(
           article: article,
           isSplitView: true,
           isActive: widget.isActive,
           onClose: _popRelatedArticle,
-          onMarkedReadAndReturn: _popRelatedArticle,
+          onMarkedReadAndReturn: _popRelatedArticleAfterFrame,
           onOpenSource: widget.onOpenSource,
           onOpenRelatedArticle: _openRelatedArticle,
         ),
-        transitionsBuilder: (_, animation, _, child) {
-          final curved = CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-            reverseCurve: Curves.easeInCubic,
-          );
-          return FadeTransition(
-            opacity: curved,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0.025, 0),
-                end: Offset.zero,
-              ).animate(curved),
-              child: child,
-            ),
-          );
-        },
+        // Keep the route transition-free so the destination is painted as a
+        // single surface instead of crossfading two independently-built
+        // ArticlePageView trees.
+        transitionsBuilder: (_, _, _, child) => child,
       ),
     );
     popped.whenComplete(() {
@@ -823,6 +814,14 @@ class _MacArticleDetailStackState extends State<MacArticleDetailStack> {
 
   void _popRelatedArticle() {
     _navigatorKey.currentState?.maybePop();
+  }
+
+  void _popRelatedArticleAfterFrame() {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _popRelatedArticle();
+    });
   }
 
   @override

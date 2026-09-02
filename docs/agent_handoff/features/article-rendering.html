@@ -146,6 +146,12 @@
 - 渲染器刻意拆分 HTML 规范化、chunk 解析、widget 渲染。修复应尽量放在问题所属阶段。
 - `ArticleController` 初始化右上角已读/未读按钮时，必须使用 `LocalArticleDbService.readOverrideOf(article.entryId) ?? article.isRead`。不要只读 `GStorage.readStatus`，因为最近阅读页传入的文章本身已经是已读，而同步成功后本地覆盖状态可能不存在。
 
+相关文章详情的渲染边界：
+
+- macOS 相关文章不是替换外层选中文章，而是在右侧 `MacArticleDetailStack` 的嵌套 `Navigator` 中保留旧 `ArticlePageView` 并压入新的详情页。这样可以恢复上一层滚动、目录和显示状态，但新页的正文解析生命周期仍然独立。
+- 新详情页初始化后可能先显示 `ArticleController.isParsingContent` 对应的排版 loading，再在 `Isolate.run()` 完成规范化和 `HtmlChunkParser` 分块后显示正文。整页 `FadeTransition` 会把旧详情、新页 loading、新页正文和 Scaffold 背景叠在同一个 160ms/140ms 转场里，形成用户看到的闪烁；当前路由转场必须保持零时长、直接绘制 child。
+- `M` 在相关文章中会先同步本地已读状态，再按 `ArticleNavigationPolicy` 返回上一层。返回回调必须通过 post-frame 调度，避免读状态通知、列表/角标刷新和 `Navigator.pop` 在同一帧竞争；`Esc` 则直接返回，不再经过反向淡出。详见[路由与状态](../architecture/routing-state.html)和[决策日志](../history/decisions.html#macos-related-detail-navigation-flicker-2026-09-02)。
+
 HTML 空段规范化：
 
 - `ArticleContentUtils._removeEmptyBlocks()` 会删除没有可见文本、没有媒体、仅由 `<br>` 和 `span/strong/em` 等格式包装组成的空块。`<p><span><br></span></p>` 与 `<p><br></p>` 语义相同，不应因多一层无意义包装而逃过清洗。

@@ -1395,6 +1395,43 @@
 
 后果：两端共用产品语义和回归测试，同时保持各自符合平台结构的导航实现。以后增加其他“临时进入文章再返回”的来源时，不应直接冒充 `related`；先确认其标为已读后是否也应自动返回，再决定扩展来源枚举或单独策略。
 
+<a id="macos-related-detail-navigation-flicker-2026-09-02"></a>
+
+## macOS 相关文章详情切换不做整页转场并将已读返回错帧（2026-09-02）
+
+背景：用户点击文章内的关联文章时，macOS 右侧详情在跳转过程中出现闪烁；从关联文章按 `Esc` 返回时同样闪烁，按 `M` 标记已读并自动返回时更明显。此前的相关文章设计已经决定 macOS 使用详情栏内的嵌套 `Navigator`，以便保留上一层 `ArticlePageView` 的滚动位置、目录状态和正文状态；因此这次问题不能简单归因于外层时间线选中项替换。
+
+现有调用链和排查过程：
+
+- `_ArticleRelationsSection._open()` 在 macOS 调用 `onOpenArticle`，由 `MacArticleDetailStack._openRelatedArticle()` 向内嵌 `Navigator` 压入新路由；Android 仍使用 `Get.toNamed(Routes.article)` 的全屏应用级路由。外层 `TimelinePage`、订阅源详情、垃圾拦截和最近阅读不会因打开相关文章而替换整个 `MacArticleDetailStack`。
+- 旧的 macOS `PageRouteBuilder` 对整个 `ArticlePageView` 使用 `160ms` `FadeTransition` + `SlideTransition`，返回使用 `140ms` 反向淡出。这里的 child 包括 `Scaffold`、header、正文和状态覆盖层，而不是一个已经稳定的正文内容层。
+- 新目标页在 `ArticlePageView.initState` 中创建新的 `ArticleController`。只要文章已有正文，`ArticleController.onInit()` 会进入 `_initContent()`：先把 `isParsingContent` 置为 true，再通过 `Isolate.run()` 做 HTML 规范化、图片提取和 `HtmlChunkParser.parseSync()`；正文 UI 会经历 loading 到解析完成两个可见状态。转场动画把旧详情、新页 loading 和新页正文叠到一起，因而用户看到的是闪烁而非平滑的文章切换。
+- `Esc` 由 `_ArticlePageViewState._handleHardwareKeyEvent()` 调用 `_closeArticle()`，相关文章回调最终执行 `Navigator.maybePop()`，所以它必然触发旧路由的 `140ms` 反向淡出。
+- 相关文章没有专门的 `onMKeyPressed`，因此 `M` 走文章页默认路径：读取 `wasUnread`、调用 `_toggleReadState()`，同步本地已读状态/数据库/read-sync/`ArticleStateNotifier`，再让 `ArticleNavigationPolicy.afterMarkedRead()` 立即执行 `onMarkedReadAndReturn`。这会把本地状态刷新和路由弹出放在同一事件/帧，进一步放大反向转场中的残影；右下角工具栏的“标为已读”复用同一个策略回调。
+- 由此排除关系数据、外层选中项替换、HTML 空 chunk/图片失败和主时间线行级动画作为本问题的主因：问题集中在“整页路由转场 × 新页异步排版 × M 同帧返回”的组合。
+
+决策：
+
+- 相关文章 `PageRouteBuilder` 的 `transitionDuration` 与 `reverseTransitionDuration` 均设为 `Duration.zero`，`transitionsBuilder` 直接返回 child。目标页作为一个完整详情表面立即绘制，不再交叉淡入两个独立构建中的 `ArticlePageView` 树。
+- 保留 macOS 嵌套 `Navigator`、旧页面挂载和逐层 `Esc` 返回；不要为消除闪烁改为外层 `selectedArticle` 替换、销毁旧详情或强行复用 Android 全屏路由。
+- `onClose`/`Esc` 继续直接 `maybePop()`；相关文章的 `onMarkedReadAndReturn` 改为 `_popRelatedArticleAfterFrame()`，使用 `WidgetsBinding.instance.addPostFrameCallback` 并检查 `mounted`，让本地已读状态、Hive/read-sync、角标和跨页面通知先完成当前帧，再弹出详情路由。该延迟不改变“未读标为已读后返回”的业务语义，也不延迟普通文章的下一篇逻辑。
+- 主时间线和垃圾拦截已有的 `MacSplitArticleListCoordinator` 行级退场时序不属于这次修复；Android 相关文章返回策略、普通文章恢复未读语义和正文 parser/rendering 也不修改。
+
+后果和验证边界：
+
+- 代码层面消除了正向/反向整页 opacity/slide 动画，M/工具栏返回与读状态刷新分离；上一层滚动、目录和显示状态仍由嵌套路由保留。
+- 最终运行 `flutter test --no-pub` 共 291 项全部通过；变更文件 `article_page.dart` 的 `dart analyze` 为 `No issues found!`，更大范围分析只有仓库既有的 59 条 `prefer_initializing_formals` info，没有本次改动的 error/warning。直接挂载完整 `ArticlePageView` 的 widget 测试曾因文章图片缓存清理计时器和测试缓存管理器的 sqflite 生命周期挂起，未保留该不稳定测试。它不能代替用户在真实 macOS 窗口中的视觉检查。
+- 提交后仍需用 macOS 构建验证一层/多层相关文章点击、`Esc` 逐层返回、`M`/工具栏标记已读返回，以及普通文章 `M` 下一篇和主时间线行级动画。首次 `flutter run --release -d macos` 若停在 Sparkle SwiftPM，不要误判为本次 UI 修复失败；本次曾因全局 Git 代理 `127.0.0.1:7890` 未监听而在依赖克隆阶段失败，代理恢复后 `git ls-remote` 已成功。
+
+<details class="dg-callout" open>
+<summary>不要回退</summary>
+
+- 不要把 macOS 相关文章改回整页 `FadeTransition`/`SlideTransition`，也不要只把动画时长调短；根因是转场包裹了会异步从 loading 变为正文的完整详情树。
+- 不要为了“统一导航”删除 macOS 内嵌 `Navigator`、替换外层文章选中项或销毁上一层详情；这样会重新丢失滚动、目录和显示状态。
+- 不要把 `M` 的 `addPostFrameCallback` 延迟移除为同帧 `maybePop()`；读状态通知和路由弹出重新竞争同一帧后，闪烁可能复现。
+- 不要把该修复扩散到 Android 全屏路由、主时间线 `180ms` 行级动画或 HTML/图片缓存层；如果未来仍有闪烁，应先确认是否是另一个独立的渲染/缓存问题。
+</details>
+
 ## 自动格式图片代理不能按嵌套源后缀选择解码器（2026-08-31）
 
 背景：oneusefulthing.org《Agency and Agents》的第一张图持续在“显示后立即重新加载”之间闪烁，后续普通图片正常。正式数据库只读快照显示该图是 Substack `/image/fetch/` 地址，路径末尾保留嵌套源 `.svg`，并带 `f_auto`；失败注册表只包含该图。使用与应用一致的请求头检查响应，服务端实际返回 `content-type: image/png` 和 `.png` 文件名。旧 `ArticleImageService.isSvg()` 只检查 URL path 后缀，正文因此用 `flutter_svg` 解码 PNG 并登记失败；后台预取或图片查看器用普通图片解码成功后又清除失败、推进 `successRevision`，正文重建后再次误用 SVG，形成闭环。

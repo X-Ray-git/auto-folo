@@ -50,6 +50,15 @@
 <script type="text/markdown" id="wiki-content">
 # 验证记录
 
+## 2026-09-02 macOS 相关文章详情切换闪烁
+
+- 用户现象：从文章内点击关联文章时，右侧详情在切换过程中出现闪烁；从相关文章按 `Esc` 返回，或按 `M` 标记已读并自动返回时也出现闪烁。
+- 代码定位：macOS 使用 `MacArticleDetailStack` 的嵌套 `Navigator`，旧详情保持挂载；旧 `_openRelatedArticle()` 却为完整 `ArticlePageView` 设置了 `160ms` 正向、`140ms` 反向的 `FadeTransition + SlideTransition`。目标页创建新的 `ArticleController` 后，正文还会先由 `isParsingContent` 显示 loading，再由 `Isolate.run()` 完成规范化和 chunk 解析；整页转场因此同时暴露旧页面、新页 loading 和新页正文，形成闪烁。`Esc` 走同一个路由的反向转场。
+- `M` 的额外叠加因素：`ArticlePageView` 先同步修改本地读状态、read-sync、Hive/列表通知和 `isRead`，随后 `ArticleNavigationPolicy` 立即调用相关文章返回回调，读状态刷新与 `Navigator.pop` 落在同一事件/帧内，放大了视觉抖动。
+- 修复：`MacArticleDetailStack` 的相关文章 `PageRouteBuilder` 改为零时长，`transitionsBuilder` 直接返回 child；保留嵌套 `Navigator`，不替换外层选中文章，继续保留上一层滚动/目录/显示状态。`onClose`/`Esc` 直接弹出；`onMarkedReadAndReturn` 改走带 `mounted` 守卫的 `WidgetsBinding.addPostFrameCallback`，先完成当前帧的读状态更新再返回。普通文章下一篇、恢复未读、Android 全屏路由和主时间线的行级退场动画不变。
+- 自动验证：本次生产改动后最终运行 `flutter test --no-pub`，291 项全部通过；`dart analyze lib/pages/article/article_page.dart` 为 `No issues found!`。更大范围的 `flutter analyze lib test` 未发现本次改动的 error/warning，但仓库已有 59 条 `prefer_initializing_formals` info，因此命令按项目现有规则以非零状态结束。`git diff --check` 与文档 `scripts/docs.sh check` 均通过。专门把真实 `ArticlePageView` 挂入 widget test 的尝试会启动文章图片缓存清理/缓存管理器生命周期，在 Flutter 测试 teardown 留下计时器并挂起，因此没有保留不稳定的测试；该限制不替代 macOS 真机视觉验证。
+- 仍需用户在 macOS Debug/Release 运行包含本改动的构建，至少确认：点击一层/多层相关文章无整页闪烁；`Esc` 每次只退一层且上一层滚动位置保留；相关文章按 `M` 或右下角标为已读后先完成状态更新再无闪烁返回；普通文章的 `M` 下一篇和主时间线 `180ms` 行级动画不受影响。
+
 ## 2026-08-31 Android 最近阅读顶部避让
 
 - 根因确认：最近阅读共用了顶栏视觉组件，但列表调用 `_buildListView(context)` 时传入的是独立 Scaffold 之上的 State context，只能读取状态栏 padding；透明 AppBar 的完整 inset 只存在于 Scaffold body context，因此第一张卡片拉到顶端后进入 AppBar 后方。
