@@ -124,6 +124,7 @@
 - HTML chunk 解析增加了 `SelectionArea` 安全边界：没有可见文字或实际媒体的空格式块不再进入 `flutter_html`，避免 Flutter 3.47 为零字符 `Text.rich` 创建无效选择区间。该修复读取时生效、不改数据库；4367 篇本地文章快照中的问题块由 888 降为 0。真实 Readability 抽取失败仍按后台任务机制单独处理。
 - 文章选择兼容层已同时修复列表和微博转发 blockquote 的排版：macOS/Android 列表使用固定 marker 列 + 可换行正文列，续行保持悬挂缩进；blockquote 保留连续文字、链接和已有 `<br>`，只在真实块边界补间距，避免旧逻辑把每个节点重复扩展为 `<br><br>`。原始 HTML、数据库和其他平台原生列表路径不变。详见 `features/article-rendering.html` 与 2026-09-02 决策日志。
 - 摘要/翻译状态已从整张响应式 Map 拆成普通 Map + `versionFor(entryId)`，详情、卡片和审核行只因当前文章变化而重建；摘要 HTML 使用稳定 parser key，同一内容和主题配置下的后台无关更新不会清除现有文本选择。正文列表继续使用 `SelectableHtmlList`，没有恢复旧的 marker 文本拼接实现。
+- 普通直链视频在成功初始化后可机会性完整缓存，过期签名的历史视频优先使用已有本地文件；播放器失败后才用 Range 请求区分 401/403 失效与网络错误。缓存排除 embed、HLS/DASH 和未知/超过 200 MB 的文件，LRU 总预算为 macOS 1 GB、Android 300 MB，账号切换同步清理。
 - YouTube 在 macOS/Android 已接入可复现构建的 YouTube.js +
   googlevideo SABR + Shaka 首选播放器：点击后才启动带随机能力路径的
   `127.0.0.1` 服务，API/媒体走严格 HTTPS 域名白名单代理，媒体流不经过

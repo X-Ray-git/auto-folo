@@ -6,6 +6,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../../services/article_image_service.dart';
 import '../../../services/animation_activity_monitor.dart';
+import '../../../services/article_video_cache_service.dart';
 import '../../../common/widgets/diagnostic_activity_marker.dart';
 import '../../../services/external_link_service.dart';
 import '../../../utils/duration_extension.dart';
@@ -25,12 +26,16 @@ abstract final class InlineVideoPlaybackVisibility {
 }
 
 /// 普通视频播放错误的分类。
-enum _InlineVideoErrorKind { none, authExpiry, generic }
+enum _InlineVideoErrorKind { none, authExpiry, network, generic }
 
 /// 内联视频播放器 — poster → 加载 → 播放（含进度条 + 拖拽定位）
 class InlineVideoPlayer extends StatefulWidget {
   final String videoUrl;
   final String? posterUrl;
+
+  /// Article identity used to keep a completed local video independent from
+  /// short-lived signed query parameters in [videoUrl].
+  final String? articleId;
 
   /// 文章原始 URL：带时效签名的 CDN 地址失效（401/403）时，
   /// 在错误界面安全地提供「打开原文」入口。
@@ -40,6 +45,7 @@ class InlineVideoPlayer extends StatefulWidget {
     super.key,
     required this.videoUrl,
     this.posterUrl,
+    this.articleId,
     this.articleUrl,
   });
 
@@ -187,10 +193,41 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
         return;
       }
 
-      final controller = VideoPlayerController.networkUrl(uri);
-      _controller = controller;
-      await controller.initialize();
+      final cachedFile = await ArticleVideoCacheService.getCachedFile(
+        articleId: widget.articleId ?? '',
+        videoUrl: widget.videoUrl,
+      );
+      var usingCachedFile = cachedFile != null;
+      late VideoPlayerController controller;
+      if (cachedFile != null) {
+        controller = VideoPlayerController.file(cachedFile);
+        _controller = controller;
+        try {
+          await controller.initialize();
+        } catch (_) {
+          // A stale/corrupt local file must not prevent one network attempt.
+          await controller.dispose();
+          await ArticleVideoCacheService.removeCachedFile(
+            articleId: widget.articleId ?? '',
+            videoUrl: widget.videoUrl,
+          );
+          _controller = null;
+          usingCachedFile = false;
+        }
+      }
+      if (!mounted) return;
+      if (!usingCachedFile) {
+        controller = VideoPlayerController.networkUrl(uri);
+        _controller = controller;
+        await controller.initialize();
+      }
       if (!mounted || !identical(_controller, controller)) return;
+      if (!usingCachedFile) {
+        ArticleVideoCacheService.warmVideo(
+          articleId: widget.articleId ?? '',
+          videoUrl: widget.videoUrl,
+        );
+      }
       await controller.setLooping(false);
       if (!mounted || !identical(_controller, controller)) return;
       controller.addListener(_onControllerUpdate);
@@ -209,11 +246,20 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
       // 带时效签名的 CDN 地址失效通常表现为 401/403 鉴权错误；
       // 其余播放错误走通用文案。
       final errorText = _controller?.value.errorDescription ?? e.toString();
+      final probeResult =
+          ArticleVideoCacheService.isLikelyExpiringUrl(widget.videoUrl)
+          ? await ArticleVideoCacheService.probeAvailability(widget.videoUrl)
+          : ArticleVideoProbeResult.notApplicable;
+      if (!mounted) return;
       setState(() {
         _isInitializing = false;
         _hasError = true;
-        _errorKind = _isAuthOrSignatureExpiry(errorText)
+        _errorKind =
+            _isAuthOrSignatureExpiry(errorText) ||
+                probeResult == ArticleVideoProbeResult.expired
             ? _InlineVideoErrorKind.authExpiry
+            : probeResult == ArticleVideoProbeResult.networkError
+            ? _InlineVideoErrorKind.network
             : _InlineVideoErrorKind.generic;
       });
       _controller?.removeListener(_onControllerUpdate);
@@ -450,6 +496,9 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
     // 错误态
     if (_hasError) {
       final isAuthExpiry = _errorKind == _InlineVideoErrorKind.authExpiry;
+      final isNetworkError = _errorKind == _InlineVideoErrorKind.network;
+      final isKnownExpiringSource =
+          ArticleVideoCacheService.isLikelyExpiringUrl(widget.videoUrl);
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: AspectRatio(
@@ -460,13 +509,21 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  Icons.error_outline,
+                  isAuthExpiry
+                      ? Icons.link_off_rounded
+                      : isNetworkError
+                      ? Icons.wifi_off_rounded
+                      : Icons.error_outline,
                   size: 36,
                   color: isAuthExpiry ? cs.error : cs.onSurfaceVariant,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  isAuthExpiry ? '视频链接已过期' : '视频无法播放',
+                  isAuthExpiry
+                      ? '视频链接已失效'
+                      : isNetworkError
+                      ? '视频暂时无法连接'
+                      : '视频无法播放',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
@@ -474,9 +531,27 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  isAuthExpiry ? '带时效的播放地址可能已失效' : '点击重试或稍后再试',
-                  style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Text(
+                    isAuthExpiry
+                        ? (isKnownExpiringSource
+                              ? ArticleVideoCacheService.expiryMessage(
+                                  widget.videoUrl,
+                                )
+                              : '媒体服务拒绝了当前播放地址，播放器无法生成新的地址。')
+                        : isNetworkError
+                        ? '未能连接媒体服务，可能是网络暂时不可用，请检查网络后重试。'
+                        : '可能是网络暂时不可用或视频格式不受支持，请稍后重试。',
+                    textAlign: TextAlign.center,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.35,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -502,7 +577,7 @@ class _InlineVideoPlayerState extends State<InlineVideoPlayer>
                         });
                         _initAndPlay();
                       },
-                      child: const Text('重试'),
+                      child: Text(isAuthExpiry ? '再次检测' : '重试'),
                     ),
                   ],
                 ),

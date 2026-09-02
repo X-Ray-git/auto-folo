@@ -911,6 +911,7 @@ class _HtmlChunkCardState extends State<HtmlChunkCard>
         child: InlineVideoPlayer(
           videoUrl: videoUrl,
           posterUrl: posterUrl,
+          articleId: widget.articleId,
           articleUrl: widget.articleUrl,
         ),
       );

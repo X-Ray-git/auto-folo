@@ -150,6 +150,14 @@ Hive box 在 `lib/utils/storage.dart` 中初始化。
 - 不清理旧 `v2_` 缓存。新机制验证稳定后再单独提供明确的旧图片缓存清理操作，避免实现和历史迁移同时发生。
 - 为未来封面保留独立缓存角色；若加入封面，不要复用正文键，应使用独立 `article-cover` 命名空间，使正文五分钟清理不会误删卡片封面。
 
+## 普通视频缓存
+
+- `ArticleVideoCacheService` 使用独立的 `fourier_video_cache_v1` `CacheManager`，不复用正文图片的 `DefaultCacheManager`。普通视频只在用户主动点击播放、网络播放器初始化成功后才后台完整下载；不在时间线加载阶段批量预取或探测，也不缓存 YouTube/Bilibili HTML embed 页面。
+- 缓存键为 `article-video-v1:<articleId>:<sha256(stableMediaIdentity)>`。稳定身份包含媒体 host/path 和排序后的稳定查询参数，排除 `Expires`、`Signature`、`dis_t`、`token`、`session` 等已知短期授权参数；因此微博签名轮换或腾讯 `dis_t` 轮换可以复用已经完成的本地文件，同时不同文章和不同媒体仍隔离。
+- `getCachedFile()` 会检查文件存在且非空，即使 CacheManager 元数据已过期也允许使用文件；这与“远端签名有效期”和“本地媒体保留期”分离的设计有关。若本地文件初始化失败，播放器会删除该键后再走网络路径，避免坏文件永久遮蔽新地址。
+- 默认保留期为 30 天未使用，容量上限为 macOS 64 个、Android 24 个，由 CacheManager 按最近使用清理。后台下载是机会性的：失败不影响当前播放，也不产生无限重试；应用退出或进程中断只会留下未完成/不可用对象，下一次播放会重新处理。
+- 账号切换前的 `AccountDataService.clearForAccountChange()` 与图片缓存并行清空视频缓存；视频后台下载用 generation 检查，切换账号期间完成的旧任务会删除结果。普通设置、文章数据库和远端订阅均不因视频缓存策略发生迁移或修改。
+
 近期设置 key：
 
 - `appearance_mode`：`system`、`light` 或 `dark`。

@@ -5,6 +5,7 @@ import '../utils/storage.dart';
 import 'account_session_guard.dart';
 import 'analysis_event_ledger.dart';
 import 'article_image_cache_service.dart';
+import 'article_video_cache_service.dart';
 import 'article_relation_service.dart';
 import 'article_relation_worker.dart';
 import 'article_state_notifier.dart';
@@ -32,7 +33,10 @@ abstract final class AccountDataService {
   }
 
   static Future<void> clearForAccountChange() async {
-    await ArticleImageCacheService.resetForAccountChange();
+    await Future.wait([
+      ArticleImageCacheService.resetForAccountChange(),
+      ArticleVideoCacheService.resetForAccountChange(),
+    ]);
     await AnalysisEventLedger.clear();
     await Future.wait([
       GStorage.localCache.clear(),
